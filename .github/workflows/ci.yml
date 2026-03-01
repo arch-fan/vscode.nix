@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.9.1
+
+      - name: Configure Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Evaluate overlay outputs for all supported systems
+        run: |
+          set -euo pipefail
+
+          systems=(
+            x86_64-linux
+            aarch64-linux
+            armv7l-linux
+            x86_64-darwin
+            aarch64-darwin
+          )
+
+          for system in "${systems[@]}"; do
+            echo "==> Evaluating $system"
+            nix eval --impure --raw --expr "
+              let
+                flake = builtins.getFlake \"path:$PWD\";
+                pkgs = import flake.inputs.nixpkgs {
+                  system = \"${system}\";
+                  config.allowUnfree = true;
+                  overlays = [ flake.outputs.overlays.default ];
+                };
+              in pkgs.vscode.version
+            "
+            nix eval --impure --raw --expr "
+              let
+                flake = builtins.getFlake \"path:$PWD\";
+                pkgs = import flake.inputs.nixpkgs {
+                  system = \"${system}\";
+                  config.allowUnfree = true;
+                  overlays = [ flake.outputs.overlays.default ];
+                };
+              in pkgs.\"vscode-insiders\".version
+            "
+          done
+
+      - name: Build Linux packages
+        run: nix build --impure path:$PWD#vscode path:$PWD#vscode-insiders --no-link
