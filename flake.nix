@@ -112,6 +112,9 @@
           vscode-insiders = (prev.vscode.override { isInsiders = true; }).overrideAttrs (old: {
             version = latestInsiders.version;
             rev = latestInsiders.rev;
+            meta = old.meta // {
+              mainProgram = "code-insiders";
+            };
             src = mkSrc final {
               version = latestInsiders.version;
               hashes = latestInsiders.hashes;
