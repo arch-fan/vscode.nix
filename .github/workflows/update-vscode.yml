@@ -89,8 +89,10 @@ jobs:
 
       - name: Create pull request
         if: ${{ github.actor != 'nektos/act' && steps.changes.outputs.changed == 'true' && steps.branch_state.outputs.already_proposed != 'true' }}
+        id: cpr
         uses: peter-evans/create-pull-request@v8.1.0
         with:
+          token: ${{ secrets.PR_CREATOR_TOKEN != '' && secrets.PR_CREATOR_TOKEN || github.token }}
           commit-message: "chore: update vscode to ${{ steps.versions.outputs.stable }} and insiders to ${{ steps.versions.outputs.insiders }}"
           title: "chore: update vscode to ${{ steps.versions.outputs.stable }} and insiders to ${{ steps.versions.outputs.insiders }}"
           body: |
@@ -104,3 +106,10 @@ jobs:
           delete-branch: true
           add-paths: |
             versions.json
+
+      - name: Enable pull request auto-merge (native)
+        if: ${{ steps.cpr.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.PR_CREATOR_TOKEN != '' && secrets.PR_CREATOR_TOKEN || github.token }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+        run: gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$PR_NUMBER"
