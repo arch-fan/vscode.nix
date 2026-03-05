@@ -34,6 +34,7 @@
         pkgs:
         {
           version,
+          rev,
           hashes,
           quality,
         }:
@@ -46,7 +47,7 @@
         in
         pkgs.fetchurl {
           name = "VSCode_${version}_${platform}.${archiveFmt}";
-          url = "https://update.code.visualstudio.com/${version}/${platform}/${quality}";
+          url = "https://update.code.visualstudio.com/commit:${rev}/${platform}/${quality}";
           inherit hash;
         };
 
@@ -98,6 +99,7 @@
             rev = latestStable.rev;
             src = mkSrc final {
               version = latestStable.version;
+              rev = latestStable.rev;
               hashes = latestStable.hashes;
               quality = "stable";
             };
@@ -117,6 +119,7 @@
             };
             src = mkSrc final {
               version = latestInsiders.version;
+              rev = latestInsiders.rev;
               hashes = latestInsiders.hashes;
               quality = "insider";
             };
