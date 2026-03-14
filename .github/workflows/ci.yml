@@ -24,6 +24,9 @@ jobs:
       - name: Configure Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
+      - name: Run flake checks
+        run: nix flake check --impure path:$PWD
+
       - name: Evaluate overlay outputs for all supported systems
         run: |
           set -euo pipefail

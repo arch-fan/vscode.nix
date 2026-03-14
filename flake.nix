@@ -30,6 +30,26 @@
       latestStable = versions.stable;
       latestInsiders = versions.insiders;
 
+      marketplaceExtensionsFromJSON =
+        pkgs: value:
+        let
+          mkExtensions =
+            extensions:
+            if builtins.isList extensions then
+              pkgs.vscode-utils.extensionsFromVscodeMarketplace extensions
+            else
+              throw "Expected a list of VS Code Marketplace extensions.";
+        in
+        if builtins.isList value then
+          mkExtensions value
+        else if builtins.isAttrs value then
+          lib.mapAttrs (_: exts: mkExtensions exts) value
+        else
+          throw "Expected a Marketplace extension lock file to contain either a list or an attribute set of lists.";
+
+      marketplaceExtensionsFromFile =
+        pkgs: path: marketplaceExtensionsFromJSON pkgs (builtins.fromJSON (builtins.readFile path));
+
       mkSrc =
         pkgs:
         {
@@ -140,7 +160,7 @@
           overlays = [ overlay ];
         };
 
-      mkUpdateApp =
+      mkUpdateVscodeApp =
         system:
         let
           pkgs = import nixpkgs { inherit system; };
@@ -159,9 +179,37 @@
           type = "app";
           program = "${updater}/bin/update-vscode-metadata";
         };
+
+      mkUpdateExtensionsApp =
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          script = builtins.path {
+            path = ./scripts/update-vscode-extensions.py;
+            name = "update-vscode-extensions.py";
+          };
+          updater = pkgs.writeShellApplication {
+            name = "update-vscode-extensions";
+            runtimeInputs = with pkgs; [
+              nix
+              python3
+            ];
+            text = ''
+              exec python ${script} "$@"
+            '';
+          };
+        in
+        {
+          type = "app";
+          program = "${updater}/bin/update-vscode-extensions";
+        };
     in
     {
       overlays.default = overlay;
+
+      lib = {
+        inherit marketplaceExtensionsFromJSON marketplaceExtensionsFromFile;
+      };
 
       packages = forAllSystems (
         system:
@@ -177,11 +225,61 @@
       apps = forAllSystems (
         system:
         let
-          updateApp = mkUpdateApp system;
+          updateVscodeApp = mkUpdateVscodeApp system;
+          updateExtensionsApp = mkUpdateExtensionsApp system;
         in
         {
-          update = updateApp;
-          default = updateApp;
+          update = updateVscodeApp;
+          update-vscode = updateVscodeApp;
+          update-extensions = updateExtensionsApp;
+          default = updateVscodeApp;
+        }
+      );
+
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = mkPkgs system;
+          flatFixture = builtins.fromJSON (builtins.readFile ./tests/fixtures/extensions-flat.json);
+          groupedFixture = builtins.fromJSON (builtins.readFile ./tests/fixtures/extensions-grouped.json);
+          flatResolved = marketplaceExtensionsFromJSON pkgs flatFixture;
+          groupedResolved = marketplaceExtensionsFromJSON pkgs groupedFixture;
+        in
+        {
+          lib-marketplace-flat =
+            assert builtins.length flatResolved == 2;
+            pkgs.runCommand "lib-marketplace-flat" { } ''
+              touch $out
+            '';
+
+          lib-marketplace-grouped =
+            assert builtins.attrNames groupedResolved == [
+              "base"
+              "node"
+            ];
+            assert builtins.length groupedResolved.base == 2;
+            assert builtins.length groupedResolved.node == 1;
+            pkgs.runCommand "lib-marketplace-grouped" { } ''
+              touch $out
+            '';
+
+          update-extensions = pkgs.runCommand "update-vscode-extensions-test" {
+            nativeBuildInputs = with pkgs; [
+              bash
+              coreutils
+              diffutils
+              gnugrep
+              jq
+              python3
+            ];
+          } ''
+            bash ${./tests/test-update-extensions.sh} \
+              ${./scripts/update-vscode-extensions.py} \
+              ${./tests/fixtures} \
+              ${./tests/mock-marketplace.py}
+
+            touch $out
+          '';
         }
       );
     };

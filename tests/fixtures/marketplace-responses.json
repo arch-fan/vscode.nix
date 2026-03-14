@@ -1,0 +1,64 @@
+{
+  "alpha.one": {
+    "publisher": "alpha",
+    "name": "one",
+    "versions": [
+      {
+        "version": "2.0.0"
+      },
+      {
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "beta.two": {
+    "publisher": "beta",
+    "name": "two",
+    "versions": [
+      {
+        "version": "2.0.0-beta.1",
+        "flags": "prerelease"
+      },
+      {
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "gamma.three": {
+    "publisher": "gamma",
+    "name": "three",
+    "versions": [
+      {
+        "version": "1.1.0-preview.1",
+        "flags": "prerelease"
+      },
+      {
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "delta.four": {
+    "publisher": "delta",
+    "name": "four",
+    "versions": [
+      {
+        "version": "1.2.0"
+      },
+      {
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "epsilon.five": {
+    "publisher": "epsilon",
+    "name": "five",
+    "versions": [
+      {
+        "version": "2.0.0"
+      },
+      {
+        "version": "1.0.0"
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "base": [
+    {
+      "publisher": "gamma",
+      "name": "three",
+      "version": "1.0.0",
+      "sha256": "sha256-gamma-three-1.0.0",
+      "prerelease": false
+    },
+    {
+      "publisher": "delta",
+      "name": "four",
+      "version": "1.0.0",
+      "sha256": "sha256-delta-four-1.0.0"
+    }
+  ],
+  "node": [
+    {
+      "publisher": "epsilon",
+      "name": "five",
+      "version": "1.0.0",
+      "sha256": "sha256-epsilon-five-1.0.0",
+      "arch": "linux-x64"
+    }
+  ]
+}

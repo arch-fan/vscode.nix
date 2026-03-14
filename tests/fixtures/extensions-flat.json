@@ -1,0 +1,15 @@
+[
+  {
+    "publisher": "alpha",
+    "name": "one",
+    "version": "1.0.0",
+    "sha256": "sha256-alpha-one-1.0.0"
+  },
+  {
+    "publisher": "beta",
+    "name": "two",
+    "version": "1.0.0",
+    "sha256": "sha256-beta-two-1.0.0",
+    "prerelease": true
+  }
+]
