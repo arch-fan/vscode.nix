@@ -75,6 +75,11 @@ def parse_args() -> argparse.Namespace:
         metavar="N",
         help=f"Maximum number of concurrent update jobs. Default: {DEFAULT_JOBS}.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Recompute hashes for all entries regardless of whether the version changed.",
+    )
     return parser.parse_args()
 
 
@@ -288,12 +293,13 @@ def iter_entries(data: Any, selected_groups: list[str]) -> list[tuple[int, str |
     return entries
 
 
-def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], include_prerelease: bool) -> dict[str, Any] | None:
+def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], include_prerelease: bool, force: bool) -> dict[str, Any] | None:
     publisher = entry.get("publisher")
     name = entry.get("name")
     current_version = entry.get("version")
     arch = entry.get("arch", "")
     current_sha256 = entry.get("sha256", "")
+    was_multi_arch = is_hash_multi_arch(current_sha256)
 
     if not isinstance(publisher, str) or not publisher:
         raise UpdateError("Every extension entry must define a non-empty string 'publisher'.")
@@ -301,7 +307,10 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         raise UpdateError("Every extension entry must define a non-empty string 'name'.")
     if not isinstance(current_version, str) or not current_version:
         raise UpdateError(f"Extension {publisher}.{name} must define a non-empty string 'version'.")
-    if not isinstance(arch, str):
+    if was_multi_arch:
+        if arch != "" and not isinstance(arch, dict):
+            raise UpdateError(f"Extension {publisher}.{name} has multi-arch sha256 but non-dict 'arch' field.")
+    elif not isinstance(arch, str):
         raise UpdateError(f"Extension {publisher}.{name} has a non-string 'arch' field.")
 
     entry_prerelease = entry.get("prerelease")
@@ -324,12 +333,13 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
     was_multi_arch = is_hash_multi_arch(current_sha256)
     converting_to_multi_arch = has_native_platforms and not was_multi_arch
 
-    if latest_version == current_version and not converting_to_multi_arch:
+    if latest_version == current_version and not converting_to_multi_arch and not force:
         return None
 
     if has_native_platforms or was_multi_arch:
         latest_hash, latest_arch = compute_multi_arch_hash(download_publisher, download_name, latest_version, target_platforms)
     else:
+        assert isinstance(arch, str)
         latest_hash = compute_hash(download_publisher, download_name, latest_version, arch)
         latest_arch = arch
 
@@ -392,7 +402,7 @@ def main() -> int:
     updates: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
         futures = [
-            executor.submit(resolve_entry_update, index, group, entry, args.include_prerelease)
+            executor.submit(resolve_entry_update, index, group, entry, args.include_prerelease, args.force)
             for index, group, entry in entries
         ]
         for future in concurrent.futures.as_completed(futures):
