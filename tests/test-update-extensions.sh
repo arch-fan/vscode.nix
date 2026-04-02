@@ -132,5 +132,7 @@ jq -e '
   .node[0].sha256 == "sha256-epsilon-five-2.0.0-linux-x64" and
   .native[0].version == "3.0.0" and
   .native[0].sha256."x86_64-linux" == "sha256-zeta-six-3.0.0-linux-x64" and
-  .native[0].sha256."aarch64-linux" == "sha256-zeta-six-3.0.0-linux-arm64"
+  .native[0].sha256."aarch64-linux" == "sha256-zeta-six-3.0.0-linux-arm64" and
+  .native[0].arch."x86_64-linux" == "linux-x64" and
+  .native[0].arch."aarch64-linux" == "linux-arm64"
 ' "$tmpdir/grouped.json" >/dev/null

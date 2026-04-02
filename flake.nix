@@ -33,21 +33,34 @@
       marketplaceExtensionsFromJSON =
         pkgs: value:
         let
-          resolveExtensionHash =
-            entry:
+          resolveExtensionAttr =
+            entry: attr:
             let
-              sha256 = entry.sha256;
+              value = entry.${attr};
             in
-            if builtins.isAttrs sha256 then
-              sha256.${pkgs.stdenv.hostPlatform.system}
-                or (throw "No sha256 for system ${pkgs.stdenv.hostPlatform.system} in extension ${entry.publisher}.${entry.name}")
-            else if builtins.isString sha256 then
-              sha256
+            if builtins.isAttrs value then
+              value.${pkgs.stdenv.hostPlatform.system}
+                or (throw "No ${attr} for system ${pkgs.stdenv.hostPlatform.system} in extension ${entry.publisher}.${entry.name}")
+            else if builtins.isString value then
+              value
             else
-              throw "sha256 must be a string or an attribute set of per-system hashes for extension ${entry.publisher}.${entry.name}";
+              throw "${attr} must be a string or an attribute set of per-system values for extension ${entry.publisher}.${entry.name}";
 
           normalizeExtensions =
-            extensions: map (entry: entry // { sha256 = resolveExtensionHash entry; }) extensions;
+            extensions:
+            map (
+              entry:
+              let
+                sha256 = resolveExtensionAttr entry "sha256";
+                normalized = entry // {
+                  inherit sha256;
+                };
+              in
+              if builtins.isAttrs entry.arch then
+                normalized // { arch = resolveExtensionAttr entry "arch"; }
+              else
+                normalized
+            ) extensions;
 
           mkExtensions =
             extensions:

@@ -239,13 +239,15 @@ def compute_multi_arch_hash(
     name: str,
     version: str,
     target_platforms: list[str],
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, str]]:
     hashes: dict[str, str] = {}
+    arches: dict[str, str] = {}
     for nix_system, target_platform in NIX_SYSTEM_TO_TARGET_PLATFORM.items():
         if target_platform not in target_platforms:
             continue
         hashes[nix_system] = compute_hash(publisher, name, version, target_platform)
-    return hashes
+        arches[nix_system] = target_platform
+    return hashes, arches
 
 
 def is_hash_multi_arch(value: Any) -> bool:
@@ -326,9 +328,10 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         return None
 
     if has_native_platforms or was_multi_arch:
-        latest_hash = compute_multi_arch_hash(download_publisher, download_name, latest_version, target_platforms)
+        latest_hash, latest_arch = compute_multi_arch_hash(download_publisher, download_name, latest_version, target_platforms)
     else:
         latest_hash = compute_hash(download_publisher, download_name, latest_version, arch)
+        latest_arch = arch
 
     return {
         "index": index,
@@ -338,6 +341,7 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         "current_version": current_version,
         "latest_version": latest_version,
         "latest_hash": latest_hash,
+        "latest_arch": latest_arch,
         "is_multi_arch": has_native_platforms or was_multi_arch,
         "converting_to_multi_arch": converting_to_multi_arch,
         "target_platforms": target_platforms,
@@ -421,8 +425,8 @@ def main() -> int:
             if update is not None:
                 entry["version"] = update["latest_version"]
                 entry["sha256"] = update["latest_hash"]
-                if isinstance(update["latest_hash"], dict) and "arch" in entry:
-                    del entry["arch"]
+                if isinstance(update["latest_hash"], dict):
+                    entry["arch"] = update["latest_arch"]
     else:
         selected_groups = args.group or list(data.keys())
         for group in selected_groups:
@@ -432,8 +436,8 @@ def main() -> int:
                 if update is not None:
                     entry["version"] = update["latest_version"]
                     entry["sha256"] = update["latest_hash"]
-                    if isinstance(update["latest_hash"], dict) and "arch" in entry:
-                        del entry["arch"]
+                    if isinstance(update["latest_hash"], dict):
+                        entry["arch"] = update["latest_arch"]
 
     write_json_atomic(path, data)
     print(f"\nUpdated {len(updates)} extension(s) in {path}.")
