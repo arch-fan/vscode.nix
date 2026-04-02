@@ -55,11 +55,9 @@
                 normalized = entry // {
                   inherit sha256;
                 };
+                hasMultiArchArch = builtins.isAttrs (entry.arch or null);
               in
-              if builtins.isAttrs entry.arch then
-                normalized // { arch = resolveExtensionAttr entry "arch"; }
-              else
-                normalized
+              if hasMultiArchArch then normalized // { arch = resolveExtensionAttr entry "arch"; } else normalized
             ) extensions;
 
           mkExtensions =
