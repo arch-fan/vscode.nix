@@ -18,6 +18,7 @@ trap cleanup EXIT
 cp "$fixtures_dir/extensions-flat.json" "$tmpdir/flat.json"
 cp "$fixtures_dir/extensions-flat.json" "$tmpdir/flat.original.json"
 cp "$fixtures_dir/extensions-grouped.json" "$tmpdir/grouped.json"
+cp "$fixtures_dir/extensions-grouped.json" "$tmpdir/grouped.original.json"
 
 mkdir -p "$tmpdir/bin"
 bash_path="$(command -v bash)"
@@ -44,6 +45,12 @@ case "$url" in
     ;;
   *"/epsilon/extension/five/2.0.0/"*"?targetPlatform=linux-x64")
     hash="sha256-epsilon-five-2.0.0-linux-x64"
+    ;;
+  *"/zeta/extension/six/3.0.0/"*"?targetPlatform=linux-x64")
+    hash="sha256-zeta-six-3.0.0-linux-x64"
+    ;;
+  *"/zeta/extension/six/3.0.0/"*"?targetPlatform=linux-arm64")
+    hash="sha256-zeta-six-3.0.0-linux-arm64"
     ;;
   *)
     echo "unexpected prefetch url: $url" >&2
@@ -121,5 +128,8 @@ jq -e '
   .base[1].version == "1.2.0" and
   .base[1].sha256 == "sha256-delta-four-1.2.0" and
   .node[0].version == "2.0.0" and
-  .node[0].sha256 == "sha256-epsilon-five-2.0.0-linux-x64"
+  .node[0].sha256 == "sha256-epsilon-five-2.0.0-linux-x64" and
+  .native[0].version == "3.0.0" and
+  .native[0].sha256."x86_64-linux" == "sha256-zeta-six-3.0.0-linux-x64" and
+  .native[0].sha256."aarch64-linux" == "sha256-zeta-six-3.0.0-linux-arm64"
 ' "$tmpdir/grouped.json" >/dev/null

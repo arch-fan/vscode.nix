@@ -27,6 +27,14 @@ PRERELEASE_TOKEN_RE = re.compile(r"(?i)(^|[.-])(alpha|beta|rc|pre|preview)([.-]|
 PRERELEASE_SUFFIX_RE = re.compile(r"-[0-9A-Za-z]")
 DEFAULT_JOBS = min(8, max(1, os.cpu_count() or 4))
 
+NIX_SYSTEM_TO_TARGET_PLATFORM = {
+    "x86_64-linux": "linux-x64",
+    "aarch64-linux": "linux-arm64",
+    "armv7l-linux": "linux-armhf",
+    "x86_64-darwin": "darwin",
+    "aarch64-darwin": "darwin-arm64",
+}
+
 
 class UpdateError(RuntimeError):
     """Raised when the lock file cannot be processed safely."""
@@ -192,6 +200,69 @@ def compute_hash(publisher: str, name: str, version: str, arch: str) -> str:
     return hash_value
 
 
+def fetch_target_platforms(
+    publisher: str,
+    name: str,
+    include_prerelease: bool,
+) -> list[str]:
+    extension_id = f"{publisher}.{name}"
+    payload = {
+        "filters": [
+            {
+                "criteria": [
+                    {"filterType": 7, "value": extension_id},
+                ]
+            }
+        ],
+        "flags": 119,
+    }
+    request = urllib.request.Request(
+        MARKETPLACE_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=MARKETPLACE_HEADERS,
+        method="POST",
+    )
+
+    try:
+        data = read_json_with_retries(request)
+    except Exception as err:
+        raise UpdateError(f"Failed to query the Marketplace for {extension_id}: {err}") from err
+
+    extension = data.get("results", [{}])[0].get("extensions", [{}])[0]
+    if not isinstance(extension, dict) or not extension:
+        raise UpdateError(f"Marketplace metadata was not found for {extension_id}.")
+
+    versions = extension.get("versions", [])
+    latest_version = pick_latest_version(versions, include_prerelease)
+    if latest_version is None:
+        return []
+
+    for version_info in versions:
+        if version_info.get("version") == latest_version:
+            platforms = version_info.get("targetPlatforms", [])
+            if isinstance(platforms, list):
+                return [str(p) for p in platforms]
+    return []
+
+
+def compute_multi_arch_hash(
+    publisher: str,
+    name: str,
+    version: str,
+    target_platforms: list[str],
+) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for nix_system, target_platform in NIX_SYSTEM_TO_TARGET_PLATFORM.items():
+        if target_platform not in target_platforms:
+            continue
+        hashes[nix_system] = compute_hash(publisher, name, version, target_platform)
+    return hashes
+
+
+def is_hash_multi_arch(value: Any) -> bool:
+    return isinstance(value, dict)
+
+
 def iter_entries(data: Any, selected_groups: list[str]) -> list[tuple[int, str | None, dict[str, Any]]]:
     entries: list[tuple[int, str | None, dict[str, Any]]] = []
     index = 0
@@ -231,6 +302,7 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
     name = entry.get("name")
     current_version = entry.get("version")
     arch = entry.get("arch", "")
+    current_sha256 = entry.get("sha256", "")
 
     if not isinstance(publisher, str) or not publisher:
         raise UpdateError("Every extension entry must define a non-empty string 'publisher'.")
@@ -255,7 +327,16 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
 
     download_publisher = publisher_api if isinstance(publisher_api, str) and publisher_api else publisher
     download_name = name_api if isinstance(name_api, str) and name_api else name
-    latest_hash = compute_hash(download_publisher, download_name, latest_version, arch)
+
+    target_platforms = fetch_target_platforms(publisher, name, allow_prerelease)
+    has_native_platforms = len(target_platforms) > 0
+    was_multi_arch = is_hash_multi_arch(current_sha256)
+    converting_to_multi_arch = has_native_platforms and not was_multi_arch
+
+    if has_native_platforms or was_multi_arch:
+        latest_hash = compute_multi_arch_hash(download_publisher, download_name, latest_version, target_platforms)
+    else:
+        latest_hash = compute_hash(download_publisher, download_name, latest_version, arch)
 
     return {
         "index": index,
@@ -265,6 +346,9 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         "current_version": current_version,
         "latest_version": latest_version,
         "latest_hash": latest_hash,
+        "is_multi_arch": has_native_platforms or was_multi_arch,
+        "converting_to_multi_arch": converting_to_multi_arch,
+        "target_platforms": target_platforms,
     }
 
 
@@ -279,11 +363,21 @@ def write_json_atomic(path: Path, data: Any) -> None:
 def format_update(update: dict[str, Any]) -> str:
     group = update["group"]
     prefix = f"[{group}] " if group is not None else ""
-    return (
+    version_line = (
         f"{prefix}{update['publisher']}.{update['name']}: "
-        f"{update['current_version']} -> {update['latest_version']} "
-        f"({update['latest_hash']})"
+        f"{update['current_version']} -> {update['latest_version']}"
     )
+    if update.get("is_multi_arch"):
+        hashes = update["latest_hash"]
+        hash_lines = "\n".join(
+            f"  {system}: {h}" for system, h in sorted(hashes.items())
+        )
+        result = f"{version_line}\n{hash_lines}"
+        if update.get("converting_to_multi_arch"):
+            platforms = ", ".join(update["target_platforms"])
+            result += f"\n  (native extension with target platforms: {platforms}; converting from single-hash to multi-arch)"
+        return result
+    return f"{version_line} ({update['latest_hash']})"
 
 
 def main() -> int:
@@ -335,6 +429,8 @@ def main() -> int:
             if update is not None:
                 entry["version"] = update["latest_version"]
                 entry["sha256"] = update["latest_hash"]
+                if isinstance(update["latest_hash"], dict) and "arch" in entry:
+                    del entry["arch"]
     else:
         selected_groups = args.group or list(data.keys())
         for group in selected_groups:
@@ -344,6 +440,8 @@ def main() -> int:
                 if update is not None:
                     entry["version"] = update["latest_version"]
                     entry["sha256"] = update["latest_hash"]
+                    if isinstance(update["latest_hash"], dict) and "arch" in entry:
+                        del entry["arch"]
 
     write_json_atomic(path, data)
     print(f"\nUpdated {len(updates)} extension(s) in {path}.")

@@ -22,5 +22,16 @@
       "sha256": "sha256-epsilon-five-1.0.0",
       "arch": "linux-x64"
     }
+  ],
+  "native": [
+    {
+      "publisher": "zeta",
+      "name": "six",
+      "version": "2.0.0",
+      "sha256": {
+        "x86_64-linux": "sha256-zeta-six-2.0.0-linux-x64",
+        "aarch64-linux": "sha256-zeta-six-2.0.0-linux-arm64"
+      }
+    }
   ]
 }

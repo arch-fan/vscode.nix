@@ -60,5 +60,19 @@
         "version": "1.0.0"
       }
     ]
+  },
+  "zeta.six": {
+    "publisher": "zeta",
+    "name": "six",
+    "versions": [
+      {
+        "version": "3.0.0",
+        "targetPlatforms": ["linux-x64", "linux-arm64"]
+      },
+      {
+        "version": "2.0.0",
+        "targetPlatforms": ["linux-x64", "linux-arm64"]
+      }
+    ]
   }
 }

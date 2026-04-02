@@ -33,10 +33,26 @@
       marketplaceExtensionsFromJSON =
         pkgs: value:
         let
+          resolveExtensionHash =
+            entry:
+            let
+              sha256 = entry.sha256;
+            in
+            if builtins.isAttrs sha256 then
+              sha256.${pkgs.stdenv.hostPlatform.system}
+                or (throw "No sha256 for system ${pkgs.stdenv.hostPlatform.system} in extension ${entry.publisher}.${entry.name}")
+            else if builtins.isString sha256 then
+              sha256
+            else
+              throw "sha256 must be a string or an attribute set of per-system hashes for extension ${entry.publisher}.${entry.name}";
+
+          normalizeExtensions =
+            extensions: map (entry: entry // { sha256 = resolveExtensionHash entry; }) extensions;
+
           mkExtensions =
             extensions:
             if builtins.isList extensions then
-              pkgs.vscode-utils.extensionsFromVscodeMarketplace extensions
+              pkgs.vscode-utils.extensionsFromVscodeMarketplace (normalizeExtensions extensions)
             else
               throw "Expected a list of VS Code Marketplace extensions.";
         in
@@ -253,33 +269,39 @@
             '';
 
           lib-marketplace-grouped =
-            assert builtins.attrNames groupedResolved == [
-              "base"
-              "node"
-            ];
+            assert
+              builtins.attrNames groupedResolved == [
+                "base"
+                "native"
+                "node"
+              ];
             assert builtins.length groupedResolved.base == 2;
             assert builtins.length groupedResolved.node == 1;
+            assert builtins.length groupedResolved.native == 1;
             pkgs.runCommand "lib-marketplace-grouped" { } ''
               touch $out
             '';
 
-          update-extensions = pkgs.runCommand "update-vscode-extensions-test" {
-            nativeBuildInputs = with pkgs; [
-              bash
-              coreutils
-              diffutils
-              gnugrep
-              jq
-              python3
-            ];
-          } ''
-            bash ${./tests/test-update-extensions.sh} \
-              ${./scripts/update-vscode-extensions.py} \
-              ${./tests/fixtures} \
-              ${./tests/mock-marketplace.py}
+          update-extensions =
+            pkgs.runCommand "update-vscode-extensions-test"
+              {
+                nativeBuildInputs = with pkgs; [
+                  bash
+                  coreutils
+                  diffutils
+                  gnugrep
+                  jq
+                  python3
+                ];
+              }
+              ''
+                bash ${./tests/test-update-extensions.sh} \
+                  ${./scripts/update-vscode-extensions.py} \
+                  ${./tests/fixtures} \
+                  ${./tests/mock-marketplace.py}
 
-            touch $out
-          '';
+                touch $out
+              '';
         }
       );
     };
