@@ -9,7 +9,8 @@ from pathlib import Path
 
 
 class Handler(BaseHTTPRequestHandler):
-    responses: dict[str, dict] = {}
+    responses: dict = {}
+    vsix_platforms: dict = {}
 
     def do_POST(self) -> None:  # noqa: N802
         try:
@@ -46,17 +47,36 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as err:  # pragma: no cover - used only in integration tests
             self.send_error(500, str(err))
 
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path
+        for key, platforms in self.vsix_platforms.items():
+            if f"/{key}/" in path:
+                for platform in platforms:
+                    if f"targetPlatform={platform}" in path:
+                        self.send_response(200)
+                        self.send_header("Content-Length", "1000")
+                        self.end_headers()
+                        return
+                self.send_error(404, "Platform not available")
+                return
+        self.send_error(404, "Unknown VSIX")
+
     def log_message(self, format: str, *args: object) -> None:
-        return
+        print(f"MOCK: {format % args}", file=sys.stderr)
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: mock-marketplace.py RESPONSES_JSON PORT_FILE")
+    if len(sys.argv) < 3:
+        raise SystemExit("usage: mock-marketplace.py RESPONSES_JSON PORT_FILE [VSIX_PLATFORMS_JSON]")
 
     responses_path = Path(sys.argv[1])
     port_file = Path(sys.argv[2])
     Handler.responses = json.loads(responses_path.read_text(encoding="utf-8"))
+
+    if len(sys.argv) >= 4:
+        vsix_platforms_path = Path(sys.argv[3])
+        raw = json.loads(vsix_platforms_path.read_text(encoding="utf-8"))
+        Handler.vsix_platforms = raw
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port_file.write_text(str(server.server_port), encoding="utf-8")

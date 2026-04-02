@@ -1,0 +1,4 @@
+{
+  "zeta/extension/six/3.0.0": ["linux-x64", "linux-arm64"],
+  "zeta/extension/six/2.0.0": ["linux-x64", "linux-arm64"]
+}

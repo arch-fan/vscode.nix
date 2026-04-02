@@ -64,7 +64,7 @@ EOF
 chmod +x "$tmpdir/bin/nix"
 
 port_file="$tmpdir/port"
-python "$server_script" "$fixtures_dir/marketplace-responses.json" "$port_file" &
+python "$server_script" "$fixtures_dir/marketplace-responses.json" "$port_file" "$fixtures_dir/vsix-platforms.json" &
 server_pid="$!"
 
 for _ in $(seq 1 50); do
@@ -81,6 +81,7 @@ fi
 
 export PATH="$tmpdir/bin:$PATH"
 export VSCODE_MARKETPLACE_URL="http://127.0.0.1:$(cat "$port_file")"
+export VSCODE_GALLERY_BASE_URL="http://127.0.0.1:$(cat "$port_file")"
 
 if python "$script" --check "$tmpdir/flat.json"; then
   echo "--check should exit with code 1 when updates exist" >&2

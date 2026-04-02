@@ -200,49 +200,38 @@ def compute_hash(publisher: str, name: str, version: str, arch: str) -> str:
     return hash_value
 
 
+GALLERY_BASE_URL = os.getenv("VSCODE_GALLERY_BASE_URL")
+
+
+def probe_vsix_available(publisher: str, name: str, version: str, target_platform: str) -> bool:
+    if GALLERY_BASE_URL:
+        url = f"{GALLERY_BASE_URL}/{publisher}/extension/{name}/{version}/?targetPlatform={target_platform}"
+    else:
+        url = (
+            f"https://{publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/"
+            f"{publisher}/extension/{name}/{version}/assetbyname/"
+            f"Microsoft.VisualStudio.Services.VSIXPackage?targetPlatform={target_platform}"
+        )
+    req = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError:
+        return False
+    except Exception:
+        return False
+
+
 def fetch_target_platforms(
     publisher: str,
     name: str,
-    include_prerelease: bool,
+    version: str,
 ) -> list[str]:
-    extension_id = f"{publisher}.{name}"
-    payload = {
-        "filters": [
-            {
-                "criteria": [
-                    {"filterType": 7, "value": extension_id},
-                ]
-            }
-        ],
-        "flags": 119,
-    }
-    request = urllib.request.Request(
-        MARKETPLACE_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=MARKETPLACE_HEADERS,
-        method="POST",
-    )
-
-    try:
-        data = read_json_with_retries(request)
-    except Exception as err:
-        raise UpdateError(f"Failed to query the Marketplace for {extension_id}: {err}") from err
-
-    extension = data.get("results", [{}])[0].get("extensions", [{}])[0]
-    if not isinstance(extension, dict) or not extension:
-        raise UpdateError(f"Marketplace metadata was not found for {extension_id}.")
-
-    versions = extension.get("versions", [])
-    latest_version = pick_latest_version(versions, include_prerelease)
-    if latest_version is None:
-        return []
-
-    for version_info in versions:
-        if version_info.get("version") == latest_version:
-            platforms = version_info.get("targetPlatforms", [])
-            if isinstance(platforms, list):
-                return [str(p) for p in platforms]
-    return []
+    available = []
+    for target_platform in NIX_SYSTEM_TO_TARGET_PLATFORM.values():
+        if probe_vsix_available(publisher, name, version, target_platform):
+            available.append(target_platform)
+    return available
 
 
 def compute_multi_arch_hash(
@@ -322,16 +311,19 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         raise UpdateError(f"Extension {publisher}.{name} has a non-boolean 'prerelease' field.")
 
     latest_version, publisher_api, name_api = fetch_latest_info(publisher, name, allow_prerelease)
-    if latest_version is None or latest_version == current_version:
+    if latest_version is None:
         return None
 
     download_publisher = publisher_api if isinstance(publisher_api, str) and publisher_api else publisher
     download_name = name_api if isinstance(name_api, str) and name_api else name
 
-    target_platforms = fetch_target_platforms(publisher, name, allow_prerelease)
+    target_platforms = fetch_target_platforms(publisher, name, latest_version)
     has_native_platforms = len(target_platforms) > 0
     was_multi_arch = is_hash_multi_arch(current_sha256)
     converting_to_multi_arch = has_native_platforms and not was_multi_arch
+
+    if latest_version == current_version and not converting_to_multi_arch:
+        return None
 
     if has_native_platforms or was_multi_arch:
         latest_hash = compute_multi_arch_hash(download_publisher, download_name, latest_version, target_platforms)
