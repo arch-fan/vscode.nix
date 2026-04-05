@@ -221,8 +221,15 @@ Each Marketplace extension entry supports:
 - `name`: required
 - `version`: required
 - `sha256`: required
-- `arch`: optional target platform suffix passed to the VSIX download URL
 - `prerelease`: optional boolean override for that entry
+
+`sha256` may be:
+
+- a string for a generic VSIX that works on every supported system
+- an attribute set keyed by Nix system for platform-specific VSIXs
+- an attribute set with `default` plus per-system overrides for mixed generic/native extensions
+
+The updater no longer writes `arch`. Legacy lock files that still contain it are still accepted and will be normalized on update.
 
 `prerelease = true` allows prerelease versions for that one extension even without `--include-prerelease`.
 
@@ -240,7 +247,7 @@ The updater:
 
 - accepts flat or grouped JSON lock files
 - preserves the existing list and group order
-- updates only the pinned `version` and `sha256` fields
+- updates only the pinned `version` and `sha256` fields and removes legacy `arch` data when rewriting entries
 - supports bounded parallel jobs
 - can update all groups or only selected groups
 

@@ -26,6 +26,7 @@ MARKETPLACE_HEADERS = {
 PRERELEASE_TOKEN_RE = re.compile(r"(?i)(^|[.-])(alpha|beta|rc|pre|preview)([.-]|$)")
 PRERELEASE_SUFFIX_RE = re.compile(r"-[0-9A-Za-z]")
 DEFAULT_JOBS = min(8, max(1, os.cpu_count() or 4))
+DEFAULT_SHA256_KEY = "default"
 
 NIX_SYSTEM_TO_TARGET_PLATFORM = {
     "x86_64-linux": "linux-x64",
@@ -34,6 +35,8 @@ NIX_SYSTEM_TO_TARGET_PLATFORM = {
     "x86_64-darwin": "darwin",
     "aarch64-darwin": "darwin-arm64",
 }
+
+HashValue = str | dict[str, str]
 
 
 class UpdateError(RuntimeError):
@@ -175,12 +178,12 @@ def fetch_latest_info(
     return latest, publisher_api, name_api
 
 
-def compute_hash(publisher: str, name: str, version: str, arch: str) -> str:
-    arch_suffix = f"?targetPlatform={arch}" if arch else ""
+def compute_hash(publisher: str, name: str, version: str, target_platform: str = "") -> str:
+    target_platform_suffix = f"?targetPlatform={target_platform}" if target_platform else ""
     url = (
         f"https://{publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/"
         f"{publisher}/extension/{name}/{version}/assetbyname/"
-        f"Microsoft.VisualStudio.Services.VSIXPackage{arch_suffix}"
+        f"Microsoft.VisualStudio.Services.VSIXPackage{target_platform_suffix}"
     )
     proc = subprocess.run(
         ["nix", "store", "prefetch-file", "--json", "--hash-type", "sha256", url],
@@ -208,14 +211,20 @@ def compute_hash(publisher: str, name: str, version: str, arch: str) -> str:
 GALLERY_BASE_URL = os.getenv("VSCODE_GALLERY_BASE_URL")
 
 
-def probe_vsix_available(publisher: str, name: str, version: str, target_platform: str) -> bool:
+def probe_vsix_available(
+    publisher: str,
+    name: str,
+    version: str,
+    target_platform: str | None = None,
+) -> bool:
+    query = f"?targetPlatform={target_platform}" if target_platform else ""
     if GALLERY_BASE_URL:
-        url = f"{GALLERY_BASE_URL}/{publisher}/extension/{name}/{version}/?targetPlatform={target_platform}"
+        url = f"{GALLERY_BASE_URL}/{publisher}/extension/{name}/{version}/{query}"
     else:
         url = (
             f"https://{publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/"
             f"{publisher}/extension/{name}/{version}/assetbyname/"
-            f"Microsoft.VisualStudio.Services.VSIXPackage?targetPlatform={target_platform}"
+            f"Microsoft.VisualStudio.Services.VSIXPackage{query}"
         )
     req = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
     try:
@@ -225,6 +234,10 @@ def probe_vsix_available(publisher: str, name: str, version: str, target_platfor
         return False
     except Exception:
         return False
+
+
+def probe_generic_vsix_available(publisher: str, name: str, version: str) -> bool:
+    return probe_vsix_available(publisher, name, version)
 
 
 def fetch_target_platforms(
@@ -239,24 +252,83 @@ def fetch_target_platforms(
     return available
 
 
-def compute_multi_arch_hash(
+def systems_for_target_platforms(target_platforms: list[str]) -> dict[str, str]:
+    return {
+        nix_system: target_platform
+        for nix_system, target_platform in NIX_SYSTEM_TO_TARGET_PLATFORM.items()
+        if target_platform in target_platforms
+    }
+
+
+def compute_per_system_hashes(
     publisher: str,
     name: str,
     version: str,
-    target_platforms: list[str],
-) -> tuple[dict[str, str], dict[str, str]]:
+    system_platforms: dict[str, str],
+) -> dict[str, str]:
     hashes: dict[str, str] = {}
-    arches: dict[str, str] = {}
-    for nix_system, target_platform in NIX_SYSTEM_TO_TARGET_PLATFORM.items():
-        if target_platform not in target_platforms:
-            continue
+    for nix_system, target_platform in system_platforms.items():
         hashes[nix_system] = compute_hash(publisher, name, version, target_platform)
-        arches[nix_system] = target_platform
-    return hashes, arches
+    return hashes
+
+
+def compute_locked_hash(
+    publisher: str,
+    name: str,
+    version: str,
+    generic_available: bool,
+    target_platforms: list[str],
+    legacy_arch: str | None,
+) -> HashValue:
+    system_platforms = systems_for_target_platforms(target_platforms)
+    if system_platforms:
+        hashes = compute_per_system_hashes(publisher, name, version, system_platforms)
+        if generic_available:
+            return {
+                DEFAULT_SHA256_KEY: compute_hash(publisher, name, version),
+                **hashes,
+            }
+        return hashes
+
+    if generic_available:
+        return compute_hash(publisher, name, version)
+
+    if legacy_arch:
+        matching_systems = {
+            nix_system: target_platform
+            for nix_system, target_platform in NIX_SYSTEM_TO_TARGET_PLATFORM.items()
+            if target_platform == legacy_arch
+        }
+        if matching_systems:
+            return compute_per_system_hashes(publisher, name, version, matching_systems)
+
+    raise UpdateError(f"No downloadable VSIX was found for {publisher}.{name}@{version}.")
 
 
 def is_hash_multi_arch(value: Any) -> bool:
     return isinstance(value, dict)
+
+
+def needs_normalization(
+    entry: dict[str, Any],
+    current_sha256: Any,
+    generic_available: bool,
+    target_platforms: list[str],
+) -> bool:
+    if "arch" in entry:
+        return True
+
+    expected_system_keys = set(systems_for_target_platforms(target_platforms))
+    if not expected_system_keys:
+        return generic_available and isinstance(current_sha256, dict)
+
+    if not isinstance(current_sha256, dict):
+        return True
+
+    expected_keys = set(expected_system_keys)
+    if generic_available:
+        expected_keys.add(DEFAULT_SHA256_KEY)
+    return set(current_sha256) != expected_keys
 
 
 def iter_entries(data: Any, selected_groups: list[str]) -> list[tuple[int, str | None, dict[str, Any]]]:
@@ -297,9 +369,8 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
     publisher = entry.get("publisher")
     name = entry.get("name")
     current_version = entry.get("version")
-    arch = entry.get("arch", "")
     current_sha256 = entry.get("sha256", "")
-    was_multi_arch = is_hash_multi_arch(current_sha256)
+    legacy_arch = entry.get("arch")
 
     if not isinstance(publisher, str) or not publisher:
         raise UpdateError("Every extension entry must define a non-empty string 'publisher'.")
@@ -307,11 +378,21 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         raise UpdateError("Every extension entry must define a non-empty string 'name'.")
     if not isinstance(current_version, str) or not current_version:
         raise UpdateError(f"Extension {publisher}.{name} must define a non-empty string 'version'.")
-    if was_multi_arch:
-        if arch != "" and not isinstance(arch, dict):
-            raise UpdateError(f"Extension {publisher}.{name} has multi-arch sha256 but non-dict 'arch' field.")
-    elif not isinstance(arch, str):
-        raise UpdateError(f"Extension {publisher}.{name} has a non-string 'arch' field.")
+    if isinstance(current_sha256, dict):
+        for nix_system, hash_value in current_sha256.items():
+            if not isinstance(nix_system, str) or not nix_system:
+                raise UpdateError(
+                    f"Extension {publisher}.{name} has a sha256 map with a non-string key."
+                )
+            if not isinstance(hash_value, str) or not hash_value:
+                raise UpdateError(
+                    f"Extension {publisher}.{name} has an invalid sha256 for key '{nix_system}'."
+                )
+    elif not isinstance(current_sha256, str):
+        raise UpdateError(f"Extension {publisher}.{name} has a non-string, non-object 'sha256' field.")
+
+    if legacy_arch is not None and not isinstance(legacy_arch, (str, dict)):
+        raise UpdateError(f"Extension {publisher}.{name} has an invalid 'arch' field.")
 
     entry_prerelease = entry.get("prerelease")
     if entry_prerelease is None:
@@ -328,20 +409,21 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
     download_publisher = publisher_api if isinstance(publisher_api, str) and publisher_api else publisher
     download_name = name_api if isinstance(name_api, str) and name_api else name
 
-    target_platforms = fetch_target_platforms(publisher, name, latest_version)
-    has_native_platforms = len(target_platforms) > 0
-    was_multi_arch = is_hash_multi_arch(current_sha256)
-    converting_to_multi_arch = has_native_platforms and not was_multi_arch
+    generic_available = probe_generic_vsix_available(download_publisher, download_name, latest_version)
+    target_platforms = fetch_target_platforms(download_publisher, download_name, latest_version)
+    normalize_entry = needs_normalization(entry, current_sha256, generic_available, target_platforms)
 
-    if latest_version == current_version and not converting_to_multi_arch and not force:
+    if latest_version == current_version and not normalize_entry and not force:
         return None
 
-    if has_native_platforms or was_multi_arch:
-        latest_hash, latest_arch = compute_multi_arch_hash(download_publisher, download_name, latest_version, target_platforms)
-    else:
-        assert isinstance(arch, str)
-        latest_hash = compute_hash(download_publisher, download_name, latest_version, arch)
-        latest_arch = arch
+    latest_hash = compute_locked_hash(
+        download_publisher,
+        download_name,
+        latest_version,
+        generic_available,
+        target_platforms,
+        legacy_arch if isinstance(legacy_arch, str) else None,
+    )
 
     return {
         "index": index,
@@ -351,9 +433,9 @@ def resolve_entry_update(index: int, group: str | None, entry: dict[str, Any], i
         "current_version": current_version,
         "latest_version": latest_version,
         "latest_hash": latest_hash,
-        "latest_arch": latest_arch,
-        "is_multi_arch": has_native_platforms or was_multi_arch,
-        "converting_to_multi_arch": converting_to_multi_arch,
+        "is_multi_arch": isinstance(latest_hash, dict),
+        "generic_available": generic_available,
+        "normalized": normalize_entry,
         "target_platforms": target_platforms,
     }
 
@@ -376,12 +458,19 @@ def format_update(update: dict[str, Any]) -> str:
     if update.get("is_multi_arch"):
         hashes = update["latest_hash"]
         hash_lines = "\n".join(
-            f"  {system}: {h}" for system, h in sorted(hashes.items())
+            f"  {system}: {h}"
+            for system, h in sorted(
+                hashes.items(),
+                key=lambda item: (item[0] != DEFAULT_SHA256_KEY, item[0]),
+            )
         )
         result = f"{version_line}\n{hash_lines}"
-        if update.get("converting_to_multi_arch"):
+        if update.get("generic_available") and update["target_platforms"]:
             platforms = ", ".join(update["target_platforms"])
-            result += f"\n  (native extension with target platforms: {platforms}; converting from single-hash to multi-arch)"
+            result += f"\n  (generic fallback plus target platforms: {platforms})"
+        elif update["target_platforms"]:
+            platforms = ", ".join(update["target_platforms"])
+            result += f"\n  (target platforms: {platforms})"
         return result
     return f"{version_line} ({update['latest_hash']})"
 
@@ -435,8 +524,7 @@ def main() -> int:
             if update is not None:
                 entry["version"] = update["latest_version"]
                 entry["sha256"] = update["latest_hash"]
-                if isinstance(update["latest_hash"], dict):
-                    entry["arch"] = update["latest_arch"]
+                entry.pop("arch", None)
     else:
         selected_groups = args.group or list(data.keys())
         for group in selected_groups:
@@ -446,8 +534,7 @@ def main() -> int:
                 if update is not None:
                     entry["version"] = update["latest_version"]
                     entry["sha256"] = update["latest_hash"]
-                    if isinstance(update["latest_hash"], dict):
-                        entry["arch"] = update["latest_arch"]
+                    entry.pop("arch", None)
 
     write_json_atomic(path, data)
     print(f"\nUpdated {len(updates)} extension(s) in {path}.")

@@ -33,32 +33,44 @@
       marketplaceExtensionsFromJSON =
         pkgs: value:
         let
-          resolveExtensionAttr =
-            entry: attr:
+          resolveExtension =
+            entry:
             let
-              value = entry.${attr};
+              system = pkgs.stdenv.hostPlatform.system;
+              sha256Value = entry.sha256;
+              targetPlatform = platformForSystem.${system}
+                or (throw "Unsupported system: ${system}");
+              legacyArch = entry.arch or null;
             in
-            if builtins.isAttrs value then
-              value.${pkgs.stdenv.hostPlatform.system}
-                or (throw "No ${attr} for system ${pkgs.stdenv.hostPlatform.system} in extension ${entry.publisher}.${entry.name}")
-            else if builtins.isString value then
-              value
+            if builtins.isAttrs sha256Value then
+              let
+                sha256 =
+                  sha256Value.${system}
+                    or sha256Value.default
+                    or (throw "No sha256 for system ${system} in extension ${entry.publisher}.${entry.name}");
+                baseEntry = builtins.removeAttrs entry [ "arch" ];
+              in
+              if builtins.hasAttr system sha256Value then
+                baseEntry
+                // {
+                  inherit sha256;
+                  arch = targetPlatform;
+                }
+              else
+                baseEntry // { inherit sha256; }
+            else if builtins.isString sha256Value then
+              if legacyArch == null || builtins.isString legacyArch then
+                entry // {
+                  sha256 = sha256Value;
+                }
+              else
+                throw "'arch' must be a string when 'sha256' is a string for extension ${entry.publisher}.${entry.name}"
             else
-              throw "${attr} must be a string or an attribute set of per-system values for extension ${entry.publisher}.${entry.name}";
+              throw "'sha256' must be a string or an attribute set for extension ${entry.publisher}.${entry.name}";
 
           normalizeExtensions =
             extensions:
-            map (
-              entry:
-              let
-                sha256 = resolveExtensionAttr entry "sha256";
-                normalized = entry // {
-                  inherit sha256;
-                };
-                hasMultiArchArch = builtins.isAttrs (entry.arch or null);
-              in
-              if hasMultiArchArch then normalized // { arch = resolveExtensionAttr entry "arch"; } else normalized
-            ) extensions;
+            map resolveExtension extensions;
 
           mkExtensions =
             extensions:

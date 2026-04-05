@@ -12,6 +12,13 @@ class Handler(BaseHTTPRequestHandler):
     responses: dict = {}
     vsix_platforms: dict = {}
 
+    @classmethod
+    def get_vsix_entry(cls, key: str) -> tuple[list[str], bool]:
+        raw = cls.vsix_platforms[key]
+        if isinstance(raw, list):
+            return raw, False
+        return raw.get("platforms", []), bool(raw.get("default", False))
+
     def do_POST(self) -> None:  # noqa: N802
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -49,14 +56,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path
-        for key, platforms in self.vsix_platforms.items():
+        for key in self.vsix_platforms:
             if f"/{key}/" in path:
+                platforms, has_default = self.get_vsix_entry(key)
                 for platform in platforms:
                     if f"targetPlatform={platform}" in path:
                         self.send_response(200)
                         self.send_header("Content-Length", "1000")
                         self.end_headers()
                         return
+                if "targetPlatform=" not in path and has_default:
+                    self.send_response(200)
+                    self.send_header("Content-Length", "1000")
+                    self.end_headers()
+                    return
                 self.send_error(404, "Platform not available")
                 return
         self.send_error(404, "Unknown VSIX")

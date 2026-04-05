@@ -16,11 +16,13 @@
   ],
   "node": [
     {
-      "publisher": "epsilon",
-      "name": "five",
-      "version": "1.0.0",
-      "sha256": "sha256-epsilon-five-1.0.0",
-      "arch": "linux-x64"
+      "publisher": "eta",
+      "name": "seven",
+      "version": "3.0.0",
+      "sha256": {
+        "default": "sha256-eta-seven-3.0.0-generic",
+        "x86_64-linux": "sha256-eta-seven-3.0.0-linux-x64"
+      }
     }
   ],
   "native": [
@@ -29,6 +31,7 @@
       "name": "six",
       "version": "2.0.0",
       "sha256": {
+        "default": "sha256-zeta-six-2.0.0-generic",
         "x86_64-linux": "sha256-zeta-six-2.0.0-linux-x64",
         "aarch64-linux": "sha256-zeta-six-2.0.0-linux-arm64"
       }

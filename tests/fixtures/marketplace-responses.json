@@ -61,6 +61,18 @@
       }
     ]
   },
+  "eta.seven": {
+    "publisher": "eta",
+    "name": "seven",
+    "versions": [
+      {
+        "version": "4.0.0"
+      },
+      {
+        "version": "3.0.0"
+      }
+    ]
+  },
   "zeta.six": {
     "publisher": "zeta",
     "name": "six",

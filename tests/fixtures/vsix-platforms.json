@@ -1,4 +1,27 @@
 {
-  "zeta/extension/six/3.0.0": ["linux-x64", "linux-arm64"],
-  "zeta/extension/six/2.0.0": ["linux-x64", "linux-arm64"]
+  "alpha/extension/one/2.0.0": {
+    "default": true,
+    "platforms": []
+  },
+  "beta/extension/two/2.0.0-beta.1": {
+    "default": true,
+    "platforms": []
+  },
+  "delta/extension/four/1.2.0": {
+    "default": true,
+    "platforms": []
+  },
+  "epsilon/extension/five/2.0.0": {
+    "platforms": ["linux-x64"]
+  },
+  "eta/extension/seven/4.0.0": {
+    "default": true,
+    "platforms": ["linux-x64", "linux-arm64"]
+  },
+  "zeta/extension/six/3.0.0": {
+    "platforms": ["linux-x64", "linux-arm64"]
+  },
+  "zeta/extension/six/2.0.0": {
+    "platforms": ["linux-x64", "linux-arm64"]
+  }
 }

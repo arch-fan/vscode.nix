@@ -17,8 +17,55 @@ trap cleanup EXIT
 
 cp "$fixtures_dir/extensions-flat.json" "$tmpdir/flat.json"
 cp "$fixtures_dir/extensions-flat.json" "$tmpdir/flat.original.json"
-cp "$fixtures_dir/extensions-grouped.json" "$tmpdir/grouped.json"
-cp "$fixtures_dir/extensions-grouped.json" "$tmpdir/grouped.original.json"
+cat > "$tmpdir/grouped.json" <<'EOF'
+{
+  "base": [
+    {
+      "publisher": "gamma",
+      "name": "three",
+      "version": "1.0.0",
+      "sha256": "sha256-gamma-three-1.0.0",
+      "prerelease": false
+    },
+    {
+      "publisher": "delta",
+      "name": "four",
+      "version": "1.0.0",
+      "sha256": "sha256-delta-four-1.0.0"
+    }
+  ],
+  "node": [
+    {
+      "publisher": "epsilon",
+      "name": "five",
+      "version": "1.0.0",
+      "sha256": "sha256-epsilon-five-1.0.0",
+      "arch": "linux-x64"
+    },
+    {
+      "publisher": "eta",
+      "name": "seven",
+      "version": "3.0.0",
+      "sha256": {
+        "default": "sha256-eta-seven-3.0.0-generic",
+        "x86_64-linux": "sha256-eta-seven-3.0.0-linux-x64"
+      }
+    }
+  ],
+  "native": [
+    {
+      "publisher": "zeta",
+      "name": "six",
+      "version": "2.0.0",
+      "sha256": {
+        "x86_64-linux": "sha256-zeta-six-2.0.0-linux-x64",
+        "aarch64-linux": "sha256-zeta-six-2.0.0-linux-arm64"
+      }
+    }
+  ]
+}
+EOF
+cp "$tmpdir/grouped.json" "$tmpdir/grouped.original.json"
 
 mkdir -p "$tmpdir/bin"
 bash_path="$(command -v bash)"
@@ -46,6 +93,15 @@ case "$url" in
   *"/epsilon/extension/five/2.0.0/"*"?targetPlatform=linux-x64")
     hash="sha256-epsilon-five-2.0.0-linux-x64"
     ;;
+  *"/eta/extension/seven/4.0.0/"*"?targetPlatform=linux-x64")
+    hash="sha256-eta-seven-4.0.0-linux-x64"
+    ;;
+  *"/eta/extension/seven/4.0.0/"*"?targetPlatform=linux-arm64")
+    hash="sha256-eta-seven-4.0.0-linux-arm64"
+    ;;
+  *"/eta/extension/seven/4.0.0/"*)
+    hash="sha256-eta-seven-4.0.0-generic"
+    ;;
   *"/zeta/extension/six/3.0.0/"*"?targetPlatform=linux-x64")
     hash="sha256-zeta-six-3.0.0-linux-x64"
     ;;
@@ -64,7 +120,7 @@ EOF
 chmod +x "$tmpdir/bin/nix"
 
 port_file="$tmpdir/port"
-python "$server_script" "$fixtures_dir/marketplace-responses.json" "$port_file" "$fixtures_dir/vsix-platforms.json" &
+python3 "$server_script" "$fixtures_dir/marketplace-responses.json" "$port_file" "$fixtures_dir/vsix-platforms.json" &
 server_pid="$!"
 
 for _ in $(seq 1 50); do
@@ -83,7 +139,7 @@ export PATH="$tmpdir/bin:$PATH"
 export VSCODE_MARKETPLACE_URL="http://127.0.0.1:$(cat "$port_file")"
 export VSCODE_GALLERY_BASE_URL="http://127.0.0.1:$(cat "$port_file")"
 
-if python "$script" --check "$tmpdir/flat.json"; then
+if python3 "$script" --check "$tmpdir/flat.json"; then
   echo "--check should exit with code 1 when updates exist" >&2
   exit 1
 else
@@ -96,7 +152,7 @@ fi
 
 cmp -s "$tmpdir/flat.original.json" "$tmpdir/flat.json"
 
-python "$script" --jobs 2 "$tmpdir/flat.json"
+python3 "$script" --jobs 2 "$tmpdir/flat.json"
 jq -e '
   length == 2 and
   .[0].publisher == "alpha" and
@@ -110,18 +166,23 @@ jq -e '
   .[1].prerelease == true
 ' "$tmpdir/flat.json" >/dev/null
 
-python "$script" --group node "$tmpdir/grouped.json"
+python3 "$script" --group node "$tmpdir/grouped.json"
 jq -e '
   .base[0].version == "1.0.0" and
   .base[0].sha256 == "sha256-gamma-three-1.0.0" and
   .base[1].version == "1.0.0" and
   .base[1].sha256 == "sha256-delta-four-1.0.0" and
   .node[0].version == "2.0.0" and
-  .node[0].sha256 == "sha256-epsilon-five-2.0.0-linux-x64" and
-  .node[0].arch == "linux-x64"
+  .node[0].sha256."x86_64-linux" == "sha256-epsilon-five-2.0.0-linux-x64" and
+  (.node[0] | has("arch") | not) and
+  .node[1].version == "4.0.0" and
+  .node[1].sha256.default == "sha256-eta-seven-4.0.0-generic" and
+  .node[1].sha256."x86_64-linux" == "sha256-eta-seven-4.0.0-linux-x64" and
+  .node[1].sha256."aarch64-linux" == "sha256-eta-seven-4.0.0-linux-arm64" and
+  (.node[1] | has("arch") | not)
 ' "$tmpdir/grouped.json" >/dev/null
 
-python "$script" --include-prerelease "$tmpdir/grouped.json"
+python3 "$script" --include-prerelease "$tmpdir/grouped.json"
 jq -e '
   .base[0].version == "1.0.0" and
   .base[0].sha256 == "sha256-gamma-three-1.0.0" and
@@ -129,10 +190,15 @@ jq -e '
   .base[1].version == "1.2.0" and
   .base[1].sha256 == "sha256-delta-four-1.2.0" and
   .node[0].version == "2.0.0" and
-  .node[0].sha256 == "sha256-epsilon-five-2.0.0-linux-x64" and
+  .node[0].sha256."x86_64-linux" == "sha256-epsilon-five-2.0.0-linux-x64" and
+  (.node[0] | has("arch") | not) and
+  .node[1].version == "4.0.0" and
+  .node[1].sha256.default == "sha256-eta-seven-4.0.0-generic" and
+  .node[1].sha256."x86_64-linux" == "sha256-eta-seven-4.0.0-linux-x64" and
+  .node[1].sha256."aarch64-linux" == "sha256-eta-seven-4.0.0-linux-arm64" and
+  (.node[1] | has("arch") | not) and
   .native[0].version == "3.0.0" and
   .native[0].sha256."x86_64-linux" == "sha256-zeta-six-3.0.0-linux-x64" and
   .native[0].sha256."aarch64-linux" == "sha256-zeta-six-3.0.0-linux-arm64" and
-  .native[0].arch."x86_64-linux" == "linux-x64" and
-  .native[0].arch."aarch64-linux" == "linux-arm64"
+  (.native[0] | has("arch") | not)
 ' "$tmpdir/grouped.json" >/dev/null
