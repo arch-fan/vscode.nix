@@ -14,7 +14,7 @@ This repository provides:
 - `overlays.default`
   - `pkgs.vscode`: pinned stable VS Code
   - `pkgs.vscode-insiders`: pinned VS Code Insiders
-- `apps.update` and `apps.update-vscode`
+- `apps.update-vscode`
   - refresh `versions.json` with the latest pinned VS Code and VS Code Insiders metadata
 - `apps.update-extensions`
   - refresh pinned Marketplace extension versions and hashes in a JSON lock file
@@ -43,7 +43,7 @@ nix build .#vscode-insiders
 Refresh pinned VS Code metadata:
 
 ```bash
-nix run .#update
+nix run .#update-vscode
 ```
 
 Refresh a Marketplace extension lock file:
@@ -310,7 +310,7 @@ nix run .#update-vscode-extensions -- ./vscode-marketplace.lock.json
 
 `versions.json` is the lock file for the pinned editor binaries exposed by the overlay.
 
-The `update` and `update-vscode` apps refresh:
+The `update-vscode` app refreshes:
 
 - stable VS Code version and hashes
 - VS Code Insiders version and hashes
