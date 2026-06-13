@@ -122,9 +122,10 @@ Consume it from your flake:
       };
 
       marketplaceExtensions =
-        vscode-nix.lib.marketplaceExtensionsFromFile
-          pkgs
-          ./vscode-marketplace.lock.json;
+        vscode-nix.lib.marketplaceExtensionsFromFile {
+          inherit pkgs;
+          path = ./vscode-marketplace.lock.json;
+        };
     in
     {
       homeManagerModules.default = {
@@ -186,9 +187,10 @@ Consume grouped data:
       };
 
       marketplace =
-        vscode-nix.lib.marketplaceExtensionsFromFile
-          pkgs
-          ./vscode-marketplace.lock.json;
+        vscode-nix.lib.marketplaceExtensionsFromFile {
+          inherit pkgs;
+          path = ./vscode-marketplace.lock.json;
+        };
     in
     {
       homeManagerModules.default = {
