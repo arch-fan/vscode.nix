@@ -265,6 +265,17 @@
             update-extensions = updateExtensionsApp;
           };
 
+          devShells.default = pkgs.mkShellNoCC {
+            packages = with pkgs; [
+              curl
+              jq
+              python3
+              nixfmt
+            ];
+          };
+
+          formatter = pkgs.nixfmt-tree;
+
           checks = {
             lib-marketplace-flat =
               assert builtins.length flatResolved == 2;

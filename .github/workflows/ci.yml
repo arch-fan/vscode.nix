@@ -25,9 +25,9 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Run flake checks
-        run: nix flake check --impure path:$PWD
+        run: nix flake check path:$PWD
 
-      - name: Evaluate overlay outputs for all supported systems
+      - name: Evaluate packages for all supported systems
         run: |
           set -euo pipefail
 
@@ -41,27 +41,11 @@ jobs:
 
           for system in "${systems[@]}"; do
             echo "==> Evaluating $system"
-            nix eval --impure --raw --expr "
-              let
-                flake = builtins.getFlake \"path:$PWD\";
-                pkgs = import flake.inputs.nixpkgs {
-                  system = \"${system}\";
-                  config.allowUnfree = true;
-                  overlays = [ flake.outputs.overlays.default ];
-                };
-              in pkgs.vscode.version
-            "
-            nix eval --impure --raw --expr "
-              let
-                flake = builtins.getFlake \"path:$PWD\";
-                pkgs = import flake.inputs.nixpkgs {
-                  system = \"${system}\";
-                  config.allowUnfree = true;
-                  overlays = [ flake.outputs.overlays.default ];
-                };
-              in pkgs.\"vscode-insiders\".version
-            "
+            nix eval --raw "path:$PWD#packages.$system.vscode.version"
+            echo
+            nix eval --raw "path:$PWD#packages.$system.vscode-insiders.version"
+            echo
           done
 
       - name: Build Linux packages
-        run: nix build --impure path:$PWD#vscode path:$PWD#vscode-insiders --no-link
+        run: nix build path:$PWD#vscode path:$PWD#vscode-insiders --no-link

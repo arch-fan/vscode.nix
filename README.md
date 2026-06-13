@@ -321,6 +321,26 @@ Data is pulled from:
 - `https://update.code.visualstudio.com/api/update/<platform>/stable/latest`
 - `https://update.code.visualstudio.com/api/update/<platform>/insider/latest`
 
+## Development
+
+Enter a dev shell with the tooling the updater scripts and checks rely on:
+
+```bash
+nix develop
+```
+
+Format the Nix sources:
+
+```bash
+nix fmt
+```
+
+Run the flake checks (library resolution plus the extension updater test suite):
+
+```bash
+nix flake check
+```
+
 ## Notes
 
 - This repository does not replace `pkgs.vscode-extensions`; use that first when an extension already exists in `nixpkgs`.
