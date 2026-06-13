@@ -170,6 +170,23 @@
                   inherit quality;
                 };
                 postPatch = fixRipgrepPath (old.postPatch or "");
+                # Newer VS Code bundles extra native modules (e.g. the GitHub
+                # Copilot "computer use" prebuilds) that link against libraries
+                # the nixpkgs derivation does not ship. Add them so
+                # autoPatchelfHook can resolve the new dependencies on Linux.
+                buildInputs =
+                  (old.buildInputs or [ ])
+                  ++ final.lib.optionals final.stdenv.hostPlatform.isLinux (
+                    map final.lib.getLib (
+                      with final;
+                      [
+                        libxtst # libXtst.so.6
+                        libjpeg8 # libjpeg.so.8
+                        pipewire # libpipewire-0.3.so.0
+                        libei # libei.so.1
+                      ]
+                    )
+                  );
                 passthru = mkPassthru old {
                   inherit (release) version rev serverHash;
                   inherit quality;

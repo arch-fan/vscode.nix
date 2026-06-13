@@ -19,16 +19,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v31.9.1
+        uses: cachix/install-nix-action@v31
 
       - name: Configure Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Run updater
-        run: nix run path:$PWD#update-vscode
+        run: nix run .#update-vscode
 
       - name: Detect changes
         id: changes
@@ -85,12 +85,12 @@ jobs:
 
       - name: Validate updated packages build on Linux
         if: ${{ github.actor != 'nektos/act' && steps.changes.outputs.changed == 'true' && steps.branch_state.outputs.already_proposed != 'true' }}
-        run: nix build path:$PWD#vscode path:$PWD#vscode-insiders --no-link
+        run: nix build .#vscode .#vscode-insiders --no-link
 
       - name: Create pull request
         if: ${{ github.actor != 'nektos/act' && steps.changes.outputs.changed == 'true' && steps.branch_state.outputs.already_proposed != 'true' }}
         id: cpr
-        uses: peter-evans/create-pull-request@v8.1.0
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PR_CREATOR_TOKEN != '' && secrets.PR_CREATOR_TOKEN || github.token }}
           commit-message: "chore: update vscode to ${{ steps.versions.outputs.stable }} and insiders to ${{ steps.versions.outputs.insiders }}"
