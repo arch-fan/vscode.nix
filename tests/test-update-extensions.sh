@@ -15,6 +15,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# SRI hash the updater produces for a VSIX whose body the mock serves as "<key>|<selected>".
+sri() {
+  python3 -c 'import sys, hashlib, base64; print("sha256-" + base64.b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).decode())' "$1"
+}
+
 cp "$fixtures_dir/extensions-flat.json" "$tmpdir/flat.json"
 cp "$fixtures_dir/extensions-flat.json" "$tmpdir/flat.original.json"
 cat > "$tmpdir/grouped.json" <<'EOF'
@@ -67,58 +72,6 @@ cat > "$tmpdir/grouped.json" <<'EOF'
 EOF
 cp "$tmpdir/grouped.json" "$tmpdir/grouped.original.json"
 
-mkdir -p "$tmpdir/bin"
-bash_path="$(command -v bash)"
-{
-  printf '#!%s\n' "$bash_path"
-  cat <<'EOF'
-set -euo pipefail
-
-if [[ "${1:-}" != "store" || "${2:-}" != "prefetch-file" ]]; then
-  echo "unexpected nix invocation: $*" >&2
-  exit 1
-fi
-
-url="${@: -1}"
-case "$url" in
-  *"/alpha/extension/one/2.0.0/"*)
-    hash="sha256-alpha-one-2.0.0"
-    ;;
-  *"/beta/extension/two/2.0.0-beta.1/"*)
-    hash="sha256-beta-two-2.0.0-beta.1"
-    ;;
-  *"/delta/extension/four/1.2.0/"*)
-    hash="sha256-delta-four-1.2.0"
-    ;;
-  *"/epsilon/extension/five/2.0.0/"*"?targetPlatform=linux-x64")
-    hash="sha256-epsilon-five-2.0.0-linux-x64"
-    ;;
-  *"/eta/extension/seven/4.0.0/"*"?targetPlatform=linux-x64")
-    hash="sha256-eta-seven-4.0.0-linux-x64"
-    ;;
-  *"/eta/extension/seven/4.0.0/"*"?targetPlatform=linux-arm64")
-    hash="sha256-eta-seven-4.0.0-linux-arm64"
-    ;;
-  *"/eta/extension/seven/4.0.0/"*)
-    hash="sha256-eta-seven-4.0.0-generic"
-    ;;
-  *"/zeta/extension/six/3.0.0/"*"?targetPlatform=linux-x64")
-    hash="sha256-zeta-six-3.0.0-linux-x64"
-    ;;
-  *"/zeta/extension/six/3.0.0/"*"?targetPlatform=linux-arm64")
-    hash="sha256-zeta-six-3.0.0-linux-arm64"
-    ;;
-  *)
-    echo "unexpected prefetch url: $url" >&2
-    exit 1
-    ;;
-esac
-
-printf '{"hash":"%s"}\n' "$hash"
-EOF
-} > "$tmpdir/bin/nix"
-chmod +x "$tmpdir/bin/nix"
-
 port_file="$tmpdir/port"
 python3 "$server_script" "$fixtures_dir/marketplace-responses.json" "$port_file" "$fixtures_dir/vsix-platforms.json" &
 server_pid="$!"
@@ -135,9 +88,19 @@ if [[ ! -s "$port_file" ]]; then
   exit 1
 fi
 
-export PATH="$tmpdir/bin:$PATH"
 export VSCODE_MARKETPLACE_URL="http://127.0.0.1:$(cat "$port_file")"
 export VSCODE_GALLERY_BASE_URL="http://127.0.0.1:$(cat "$port_file")"
+
+# Expected hashes for the versions the updater resolves against the mock.
+alpha_one="$(sri 'alpha/extension/one/2.0.0|default')"
+beta_two="$(sri 'beta/extension/two/2.0.0-beta.1|default')"
+delta_four="$(sri 'delta/extension/four/1.2.0|default')"
+epsilon_five="$(sri 'epsilon/extension/five/2.0.0|linux-x64')"
+eta_seven_default="$(sri 'eta/extension/seven/4.0.0|default')"
+eta_seven_x64="$(sri 'eta/extension/seven/4.0.0|linux-x64')"
+eta_seven_arm64="$(sri 'eta/extension/seven/4.0.0|linux-arm64')"
+zeta_six_x64="$(sri 'zeta/extension/six/3.0.0|linux-x64')"
+zeta_six_arm64="$(sri 'zeta/extension/six/3.0.0|linux-arm64')"
 
 if python3 "$script" --check "$tmpdir/flat.json"; then
   echo "--check should exit with code 1 when updates exist" >&2
@@ -153,52 +116,68 @@ fi
 cmp -s "$tmpdir/flat.original.json" "$tmpdir/flat.json"
 
 python3 "$script" --jobs 2 "$tmpdir/flat.json"
-jq -e '
+jq -e \
+  --arg alpha_one "$alpha_one" \
+  --arg beta_two "$beta_two" \
+  '
   length == 2 and
   .[0].publisher == "alpha" and
   .[0].name == "one" and
   .[0].version == "2.0.0" and
-  .[0].sha256 == "sha256-alpha-one-2.0.0" and
+  .[0].sha256 == $alpha_one and
   .[1].publisher == "beta" and
   .[1].name == "two" and
   .[1].version == "2.0.0-beta.1" and
-  .[1].sha256 == "sha256-beta-two-2.0.0-beta.1" and
+  .[1].sha256 == $beta_two and
   .[1].prerelease == true
 ' "$tmpdir/flat.json" >/dev/null
 
 python3 "$script" --group node "$tmpdir/grouped.json"
-jq -e '
+jq -e \
+  --arg epsilon_five "$epsilon_five" \
+  --arg eta_seven_default "$eta_seven_default" \
+  --arg eta_seven_x64 "$eta_seven_x64" \
+  --arg eta_seven_arm64 "$eta_seven_arm64" \
+  '
   .base[0].version == "1.0.0" and
   .base[0].sha256 == "sha256-gamma-three-1.0.0" and
   .base[1].version == "1.0.0" and
   .base[1].sha256 == "sha256-delta-four-1.0.0" and
   .node[0].version == "2.0.0" and
-  .node[0].sha256."x86_64-linux" == "sha256-epsilon-five-2.0.0-linux-x64" and
+  .node[0].sha256."x86_64-linux" == $epsilon_five and
   (.node[0] | has("arch") | not) and
   .node[1].version == "4.0.0" and
-  .node[1].sha256.default == "sha256-eta-seven-4.0.0-generic" and
-  .node[1].sha256."x86_64-linux" == "sha256-eta-seven-4.0.0-linux-x64" and
-  .node[1].sha256."aarch64-linux" == "sha256-eta-seven-4.0.0-linux-arm64" and
+  .node[1].sha256.default == $eta_seven_default and
+  .node[1].sha256."x86_64-linux" == $eta_seven_x64 and
+  .node[1].sha256."aarch64-linux" == $eta_seven_arm64 and
   (.node[1] | has("arch") | not)
 ' "$tmpdir/grouped.json" >/dev/null
 
 python3 "$script" --include-prerelease "$tmpdir/grouped.json"
-jq -e '
+jq -e \
+  --arg delta_four "$delta_four" \
+  --arg epsilon_five "$epsilon_five" \
+  --arg eta_seven_default "$eta_seven_default" \
+  --arg eta_seven_x64 "$eta_seven_x64" \
+  --arg eta_seven_arm64 "$eta_seven_arm64" \
+  --arg zeta_six_x64 "$zeta_six_x64" \
+  --arg zeta_six_arm64 "$zeta_six_arm64" \
+  '
   .base[0].version == "1.0.0" and
   .base[0].sha256 == "sha256-gamma-three-1.0.0" and
   .base[0].prerelease == false and
   .base[1].version == "1.2.0" and
-  .base[1].sha256 == "sha256-delta-four-1.2.0" and
+  .base[1].sha256 == $delta_four and
   .node[0].version == "2.0.0" and
-  .node[0].sha256."x86_64-linux" == "sha256-epsilon-five-2.0.0-linux-x64" and
+  .node[0].sha256."x86_64-linux" == $epsilon_five and
   (.node[0] | has("arch") | not) and
   .node[1].version == "4.0.0" and
-  .node[1].sha256.default == "sha256-eta-seven-4.0.0-generic" and
-  .node[1].sha256."x86_64-linux" == "sha256-eta-seven-4.0.0-linux-x64" and
-  .node[1].sha256."aarch64-linux" == "sha256-eta-seven-4.0.0-linux-arm64" and
+  .node[1].sha256.default == $eta_seven_default and
+  .node[1].sha256."x86_64-linux" == $eta_seven_x64 and
+  .node[1].sha256."aarch64-linux" == $eta_seven_arm64 and
   (.node[1] | has("arch") | not) and
   .native[0].version == "3.0.0" and
-  .native[0].sha256."x86_64-linux" == "sha256-zeta-six-3.0.0-linux-x64" and
-  .native[0].sha256."aarch64-linux" == "sha256-zeta-six-3.0.0-linux-arm64" and
+  .native[0].sha256."x86_64-linux" == $zeta_six_x64 and
+  .native[0].sha256."aarch64-linux" == $zeta_six_arm64 and
   (.native[0] | has("arch") | not)
 ' "$tmpdir/grouped.json" >/dev/null

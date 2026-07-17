@@ -48,7 +48,10 @@
                 diffutils
                 gnugrep
                 jq
-                python3
+                (python3.withPackages (ps: [
+                  ps.click
+                  ps.voluptuous
+                ]))
               ];
             }
             ''
@@ -57,6 +60,19 @@
                 ${inputs.self + /tests/fixtures} \
                 ${inputs.self + /tests/mock-marketplace.py}
 
+              touch $out
+            '';
+
+        ruff-lint =
+          pkgs.runCommand "ruff-lint"
+            {
+              nativeBuildInputs = [ pkgs.ruff ];
+            }
+            ''
+              cd ${inputs.self}
+              ruff check --no-cache \
+                scripts/update-vscode-extensions.py \
+                tests/mock-marketplace.py
               touch $out
             '';
       };

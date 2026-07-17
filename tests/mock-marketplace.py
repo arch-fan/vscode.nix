@@ -59,18 +59,23 @@ class Handler(BaseHTTPRequestHandler):
         for key in self.vsix_platforms:
             if f"/{key}/" in path:
                 platforms, has_default = self.get_vsix_entry(key)
+                selected = None
                 for platform in platforms:
                     if f"targetPlatform={platform}" in path:
-                        self.send_response(200)
-                        self.send_header("Content-Length", "1000")
-                        self.end_headers()
-                        return
-                if "targetPlatform=" not in path and has_default:
-                    self.send_response(200)
-                    self.send_header("Content-Length", "1000")
-                    self.end_headers()
+                        selected = platform
+                        break
+                if selected is None and "targetPlatform=" not in path and has_default:
+                    selected = "default"
+                if selected is None:
+                    self.send_error(404, "Platform not available")
                     return
-                self.send_error(404, "Platform not available")
+                # Serve deterministic bytes so the updater's streaming hash is reproducible.
+                body = f"{key}|{selected}".encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
                 return
         self.send_error(404, "Unknown VSIX")
 

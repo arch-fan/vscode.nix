@@ -231,7 +231,7 @@ Each Marketplace extension entry supports:
 - an attribute set keyed by Nix system for platform-specific VSIXs
 - an attribute set with `default` plus per-system overrides for mixed generic/native extensions
 
-The updater no longer writes `arch`. Legacy lock files that still contain it are still accepted and will be normalized on update.
+The updater no longer writes `arch`. Legacy lock files that still contain it are still accepted; a stale `arch` is dropped when that entry's version changes, or for every entry when `--force` is passed. Unchanged entries are left untouched (see below).
 
 `prerelease = true` allows prerelease versions for that one extension even without `--include-prerelease`.
 
@@ -250,8 +250,15 @@ The updater:
 - accepts flat or grouped JSON lock files
 - preserves the existing list and group order
 - updates only the pinned `version` and `sha256` fields and removes legacy `arch` data when rewriting entries
-- supports bounded parallel jobs
+- skips any entry whose pinned version already matches the newest published version, so unchanged extensions are never downloaded or re-hashed (pass `--force` to override)
+- reads which platform builds exist from the Marketplace metadata, so it downloads only real assets and never fires speculative probe requests
+- hashes each VSIX by streaming it straight from the Marketplace and never writes the download to disk
+- runs everything in one pipelined worker pool: version checks and downloads overlap, and every published asset downloads/hashes concurrently (one task per asset), with a progress bar and colored summary (color and the bar auto-disable when output is not a terminal)
+- `--check` compares versions only and performs no downloads at all
+- validates each lock entry against a schema and reports the offending field on bad input
 - can update all groups or only selected groups
+
+`nix run` bundles the interpreter, but running `scripts/update-vscode-extensions.py` directly requires the [`click`](https://pypi.org/project/click/) (CLI) and [`voluptuous`](https://pypi.org/project/voluptuous/) (lock-file validation) packages.
 
 ### Parameters
 
@@ -269,8 +276,11 @@ The updater:
   - update only one group in a grouped lock file
   - repeat the flag to select multiple groups
 - `--jobs N`
-  - maximum number of concurrent update jobs
-  - default is `min(8, cpu-count)`
+  - maximum number of concurrent download/hash jobs
+  - default is `min(16, max(4, cpu-count * 2))`
+- `--force`
+  - recompute hashes for every entry even when the version is unchanged
+  - also the way to normalize a legacy `arch` lock file without a version bump
 
 Examples:
 

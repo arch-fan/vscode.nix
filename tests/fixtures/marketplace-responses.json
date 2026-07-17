@@ -54,10 +54,12 @@
     "name": "five",
     "versions": [
       {
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "targetPlatform": "linux-x64"
       },
       {
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "targetPlatform": "linux-x64"
       }
     ]
   },
@@ -67,6 +69,14 @@
     "versions": [
       {
         "version": "4.0.0"
+      },
+      {
+        "version": "4.0.0",
+        "targetPlatform": "linux-x64"
+      },
+      {
+        "version": "4.0.0",
+        "targetPlatform": "linux-arm64"
       },
       {
         "version": "3.0.0"
@@ -79,11 +89,19 @@
     "versions": [
       {
         "version": "3.0.0",
-        "targetPlatforms": ["linux-x64", "linux-arm64"]
+        "targetPlatform": "linux-x64"
+      },
+      {
+        "version": "3.0.0",
+        "targetPlatform": "linux-arm64"
       },
       {
         "version": "2.0.0",
-        "targetPlatforms": ["linux-x64", "linux-arm64"]
+        "targetPlatform": "linux-x64"
+      },
+      {
+        "version": "2.0.0",
+        "targetPlatform": "linux-arm64"
       }
     ]
   }

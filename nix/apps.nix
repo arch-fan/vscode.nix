@@ -26,12 +26,13 @@
           path = inputs.self + /scripts/update-vscode-extensions.py;
           name = "update-vscode-extensions.py";
         };
+        python = pkgs.python3.withPackages (ps: [
+          ps.click
+          ps.voluptuous
+        ]);
         updater = pkgs.writeShellApplication {
           name = "update-vscode-extensions";
-          runtimeInputs = with pkgs; [
-            nix
-            python3
-          ];
+          runtimeInputs = [ python ];
           text = ''
             exec python ${script} "$@"
           '';
