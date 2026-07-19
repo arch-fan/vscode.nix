@@ -104,6 +104,22 @@ in
           unpackCmd = ''
             tar xf "$curSrc" --mode=+w --warning=no-timestamp --no-same-permissions
           '';
+          # ONNX Runtime's CUDA and TensorRT providers are optional.  Recent
+          # VS Code archives bundle the provider libraries, but not their
+          # proprietary GPU runtimes; they are loaded only when explicitly
+          # requested and the matching runtime is available on the system.
+          autoPatchelfIgnoreMissingDeps =
+            (old.autoPatchelfIgnoreMissingDeps or [ ])
+            ++ [
+              "libcublasLt.so.12"
+              "libcublas.so.12"
+              "libcudart.so.12"
+              "libcudnn.so.9"
+              "libcufft.so.11"
+              "libcurand.so.10"
+              "libnvinfer.so.10"
+              "libnvonnxparser.so.10"
+            ];
         };
 
       vscode = pkgs.vscode.overrideAttrs (mkVscodeAttrs latestStable "stable");
