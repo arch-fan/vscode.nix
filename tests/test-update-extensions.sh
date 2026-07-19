@@ -102,6 +102,49 @@ eta_seven_arm64="$(sri 'eta/extension/seven/4.0.0|linux-arm64')"
 zeta_six_x64="$(sri 'zeta/extension/six/3.0.0|linux-x64')"
 zeta_six_arm64="$(sri 'zeta/extension/six/3.0.0|linux-arm64')"
 
+# The base group has two entries, but only delta.four needs an update. Capture a
+# real terminal rendering to verify the bar counts just that hash and omits ETA.
+cp "$tmpdir/grouped.original.json" "$tmpdir/progress.json"
+progress_output="$(python3 - "$script" "$tmpdir/progress.json" <<'PY'
+import errno
+import os
+import pty
+import subprocess
+import sys
+
+master, slave = pty.openpty()
+process = subprocess.Popen(
+    [sys.executable, sys.argv[1], "--group", "base", sys.argv[2]],
+    stdout=slave,
+    stderr=slave,
+    env=os.environ,
+)
+os.close(slave)
+chunks = []
+while True:
+    try:
+        chunk = os.read(master, 65536)
+    except OSError as error:
+        if error.errno == errno.EIO:
+            break
+        raise
+    if not chunk:
+        break
+    chunks.append(chunk)
+os.close(master)
+status = process.wait()
+if status != 0:
+    raise SystemExit(status)
+sys.stdout.buffer.write(b"".join(chunks))
+PY
+)"
+grep -F "Hashing 1 extension" <<<"$progress_output" >/dev/null
+grep -F "████████████████████████  1/1 · 100%" <<<"$progress_output" >/dev/null
+if grep -F "ETA" <<<"$progress_output" >/dev/null; then
+  echo "progress output should not include an ETA" >&2
+  exit 1
+fi
+
 if python3 "$script" --check "$tmpdir/flat.json"; then
   echo "--check should exit with code 1 when updates exist" >&2
   exit 1

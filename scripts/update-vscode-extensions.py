@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import concurrent.futures
+import contextlib
 import hashlib
 import http.client
 import json
@@ -16,7 +17,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import click
 from voluptuous import ALLOW_EXTRA, All, Length, MultipleInvalid, Optional, Required, Schema
@@ -410,15 +411,17 @@ def resolve_and_hash(
     force: bool,
     jobs: int,
     check: bool,
-    on_progress: Any = None,
+    on_progress: Callable[[], None] | None = None,
+    on_progress_start: Callable[[int], None] | None = None,
 ) -> list[PendingUpdate]:
     """Resolve versions and hash assets in one shared, fully pipelined pool.
 
     An extension's download/hash tasks (one per declared platform asset) are submitted
     the moment its metadata resolves, so downloads run while other extensions are still
     being version-checked and every asset across all extensions hashes concurrently.
-    With --check no download task is ever submitted. Progress fires once per entry,
-    when it is known up to date or when its last asset finishes hashing.
+    With --check no download task is ever submitted and progress fires once per
+    checked entry. During an update, progress starts once the number of extensions
+    requiring hashes is known, then fires when each extension's last asset finishes.
     """
 
     def bump() -> None:
@@ -439,7 +442,8 @@ def resolve_and_hash(
         for future in concurrent.futures.as_completed(resolve_futures):
             pending = future.result()
             if pending is None:
-                bump()
+                if check:
+                    bump()
                 continue
             pending_updates.append(pending)
             if check:
@@ -456,6 +460,9 @@ def resolve_and_hash(
                     target_platform,
                 )
                 hash_futures[hash_future] = (pending, key)
+
+        if not check and pending_updates and on_progress_start is not None:
+            on_progress_start(len(pending_updates))
 
         for future in concurrent.futures.as_completed(hash_futures):
             pending, key = hash_futures[future]
@@ -595,19 +602,51 @@ def main(
             return
 
         # Everything runs in one pipelined pool: version checks and downloads overlap,
-        # and every VSIX asset hashes concurrently. The progress bar (one tick per
-        # extension) goes to stderr and auto-hides when stderr is not a terminal, so
-        # piped/CI output stays clean.
-        verb = "Checking" if check else "Updating"
-        label = click.style(f"{verb} {len(entries)} extension(s)", fg="cyan")
-        with click.progressbar(length=len(entries), label=label, file=sys.stderr) as bar:
+        # and every VSIX asset hashes concurrently. In update mode the bar starts once
+        # version resolution reveals how many extensions actually need hashes. It goes
+        # to stderr and auto-hides when stderr is not a terminal, so piped/CI output
+        # stays clean.
+        with contextlib.ExitStack() as progress_stack:
+            bar: click.ProgressBar | None = None
+
+            def open_progress(action: str, length: int) -> click.ProgressBar:
+                noun = "extension" if length == 1 else "extensions"
+                label = click.style(f"{action} {length} {noun}", fg="cyan", bold=True)
+                return progress_stack.enter_context(
+                    click.progressbar(
+                        length=length,
+                        label=label,
+                        file=sys.stderr,
+                        fill_char="█",
+                        empty_char="░",
+                        bar_template="%(label)s  %(bar)s  %(info)s",
+                        info_sep=" · ",
+                        width=24,
+                        show_eta=False,
+                        show_pos=True,
+                        show_percent=True,
+                    )
+                )
+
+            if check:
+                bar = open_progress("Checking", len(entries))
+
+            def start_hash_progress(length: int) -> None:
+                nonlocal bar
+                bar = open_progress("Hashing", length)
+
+            def bump_progress() -> None:
+                if bar is not None:
+                    bar.update(1)
+
             pending_updates = resolve_and_hash(
                 entries,
                 include_prerelease,
                 force,
                 jobs,
                 check,
-                on_progress=lambda: bar.update(1),
+                on_progress=bump_progress,
+                on_progress_start=None if check else start_hash_progress,
             )
 
         if not pending_updates:
