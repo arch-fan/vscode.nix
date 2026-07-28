@@ -13,14 +13,14 @@
   },
   "insiders": {
     "version": "1.131.0-insider",
-    "rev": "89f97b7558e686b089c4b8a0294b16c95f1be8d5",
-    "serverHash": "sha256-KRRppb3F665Za2Pkebx+0U3t5Cu//WF7ypgyiMtFHTw=",
+    "rev": "e4c7e7b1d6d060162f4aa7f8225271b67ce1df75",
+    "serverHash": "sha256-pF2QR0Y57d24m4j5jyfvmX4vFFiApn08eRq9ra3dGd8=",
     "hashes": {
-      "x86_64-linux": "sha256-2wEQtRnBsLpWJhz8Zc2ckLkDtYp1eFFMvcBnBKD8RCA=",
-      "aarch64-linux": "sha256-8/BvkXPA8lkyMEFGC6oK055hJfjk2Ywih578OKB6ifg=",
-      "armv7l-linux": "sha256-sha5UrwzwnU2H0eIywxlmUB6HNgorE9KmT4r+qEDxps=",
-      "x86_64-darwin": "sha256-UNexa7XMI8w5WYDhhRs3PDzUrfMp6y/MFKDyhBue14Q=",
-      "aarch64-darwin": "sha256-0dPoZTXEH3NDmOFrzv4bETAgDKY7W3hCt2kzCaJu4lw="
+      "x86_64-linux": "sha256-xjVQ+fZrcg3DHKLXQibKVuYkIb0jHUhtowYv/rjYCc8=",
+      "aarch64-linux": "sha256-BiOcTwOAKNKdzUvNWken1jXeqji86sSklLu11/DA07U=",
+      "armv7l-linux": "sha256-uVNhMj9lEkCS72ldFpwgbhv/bcMNG1EjMw676tBbk2Q=",
+      "x86_64-darwin": "sha256-8lgc4nRvjpjz7Hn89+rRhp9S7TxkV1sKh1Gu+miqJ6I=",
+      "aarch64-darwin": "sha256-FwABOdOrXGIyrG+AiddcOUP62TuJKdadOoCGk0HawWc="
     }
   }
 }
