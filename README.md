@@ -250,10 +250,12 @@ The updater:
 - accepts flat or grouped JSON lock files
 - preserves the existing list and group order
 - updates only the pinned `version` and `sha256` fields and removes legacy `arch` data when rewriting entries
-- skips any entry whose pinned version already matches the newest published version, so unchanged extensions are never downloaded or re-hashed (pass `--force` to override)
+- skips any entry whose pinned version already matches the newest usable published version, so unchanged extensions are never downloaded or re-hashed (pass `--force` to override)
 - reads which platform builds exist from the Marketplace metadata, so it downloads only real assets and never fires speculative probe requests
+- skips a newest publication that has no VSIX for any configured Nix system, warns about the fallback, and uses the newest earlier usable publication
 - hashes each VSIX by streaming it straight from the Marketplace and never writes the download to disk
 - runs everything in one pipelined worker pool: version checks and downloads overlap, and every published asset downloads/hashes concurrently (one task per asset), with an ETA-free progress bar covering only extensions that need hashing and a colored summary (color and the bar auto-disable when output is not a terminal)
+- keeps processing other entries when one extension cannot be resolved or hashed, leaves failed entries unchanged, and exits with status `1` after applying successful updates
 - `--check` compares versions only and performs no downloads at all
 - validates each lock entry against a schema and reports the offending field on bad input
 - can update all groups or only selected groups

@@ -78,6 +78,39 @@ class PendingUpdate:
         return (1 if self.generic_available else 0) + len(self.target_platforms)
 
 
+@dataclass
+class MarketplaceInfo:
+    selected_version: str | None
+    publisher: str | None
+    name: str | None
+    generic_available: bool
+    target_platforms: list[str]
+    newest_version: str | None
+    newest_platforms: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PendingResolution:
+    pending: PendingUpdate | None
+    warning: str | None = None
+
+
+@dataclass
+class UpdateFailure:
+    index: int
+    group: str | None
+    publisher: str
+    name: str
+    message: str
+
+
+@dataclass
+class ResolveResult:
+    pending_updates: list[PendingUpdate]
+    warnings: list[str]
+    failures: list[UpdateFailure]
+
+
 def read_json(path: Path) -> Any:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -123,15 +156,45 @@ def is_prerelease(version_info: dict[str, Any], version: str) -> bool:
     return False
 
 
-def pick_latest_version(versions: list[dict[str, Any]], include_prerelease: bool) -> str | None:
+def iter_candidate_versions(
+    versions: list[dict[str, Any]], include_prerelease: bool
+) -> list[str]:
+    """Return published versions in Marketplace order, without duplicates."""
+    candidates: list[str] = []
+    seen: set[str] = set()
     for version_info in versions:
         version = version_info.get("version")
         if not isinstance(version, str):
             continue
+        if version in seen:
+            continue
+        seen.add(version)
         if not include_prerelease and is_prerelease(version_info, version):
             continue
-        return version
-    return None
+        candidates.append(version)
+    return candidates
+
+
+def pick_latest_version(versions: list[dict[str, Any]], include_prerelease: bool) -> str | None:
+    candidates = iter_candidate_versions(versions, include_prerelease)
+    return candidates[0] if candidates else None
+
+
+def pick_latest_supported_version(
+    versions: list[dict[str, Any]], include_prerelease: bool
+) -> tuple[str | None, bool, list[str]]:
+    """Pick the newest candidate that has a generic or supported target asset.
+
+    Marketplace publishes each target platform as a separate version object. A
+    release can therefore briefly appear with only an unsupported platform (for
+    example, Alpine) while the usable assets are still being published. Do not
+    let that partial release block the lock-file update.
+    """
+    for version in iter_candidate_versions(versions, include_prerelease):
+        generic_available, target_platforms = collect_assets(versions, version)
+        if generic_available or target_platforms:
+            return version, generic_available, target_platforms
+    return None, False, []
 
 
 TARGET_PLATFORM_TO_NIX_SYSTEM = {
@@ -160,11 +223,23 @@ def collect_assets(versions: list[dict[str, Any]], latest_version: str) -> tuple
     return generic_available, target_platforms
 
 
+def collect_published_platforms(versions: list[dict[str, Any]], version: str) -> list[str]:
+    """Return the raw Marketplace platform labels published for a version."""
+    platforms: list[str] = []
+    for version_info in versions:
+        if version_info.get("version") != version:
+            continue
+        platform = version_info.get("targetPlatform") or "generic"
+        if isinstance(platform, str) and platform not in platforms:
+            platforms.append(platform)
+    return platforms
+
+
 def fetch_latest_info(
     publisher: str,
     name: str,
     include_prerelease: bool,
-) -> tuple[str | None, str | None, str | None, bool, list[str]]:
+) -> MarketplaceInfo:
     extension_id = f"{publisher}.{name}"
     payload = {
         "filters": [
@@ -193,13 +268,35 @@ def fetch_latest_info(
         raise UpdateError(f"Marketplace metadata was not found for {extension_id}.")
 
     versions = extension.get("versions", [])
-    latest = pick_latest_version(versions, include_prerelease)
     publisher_api = extension.get("publisher", {}).get("publisherName")
     name_api = extension.get("extensionName")
+    latest = pick_latest_version(versions, include_prerelease)
     if latest is None:
-        return None, publisher_api, name_api, False, []
-    generic_available, target_platforms = collect_assets(versions, latest)
-    return latest, publisher_api, name_api, generic_available, target_platforms
+        return MarketplaceInfo(None, publisher_api, name_api, False, [], None)
+    supported_version, generic_available, target_platforms = pick_latest_supported_version(
+        versions, include_prerelease
+    )
+    if supported_version is None:
+        # Preserve the existing, actionable error from resolve_pending when no
+        # candidate has an asset for any system supported by this flake.
+        return MarketplaceInfo(
+            latest,
+            publisher_api,
+            name_api,
+            False,
+            [],
+            latest,
+            collect_published_platforms(versions, latest),
+        )
+    return MarketplaceInfo(
+        supported_version,
+        publisher_api,
+        name_api,
+        generic_available,
+        target_platforms,
+        latest,
+        collect_published_platforms(versions, latest),
+    )
 
 
 def build_download_url(publisher: str, name: str, version: str, target_platform: str | None) -> str:
@@ -324,7 +421,7 @@ def resolve_pending(
     entry: dict[str, Any],
     include_prerelease: bool,
     force: bool,
-) -> PendingUpdate | None:
+) -> PendingResolution:
     """Decide whether an entry needs updating without touching the download endpoint.
 
     When the newest published version already matches the pinned version we return early
@@ -338,34 +435,45 @@ def resolve_pending(
     entry_prerelease = validated.get("prerelease")
     allow_prerelease = include_prerelease if entry_prerelease is None else entry_prerelease
 
-    latest_version, publisher_api, name_api, generic_available, target_platforms = fetch_latest_info(
-        publisher, name, allow_prerelease
-    )
+    info = fetch_latest_info(publisher, name, allow_prerelease)
+    latest_version = info.selected_version
     if latest_version is None:
-        return None
+        return PendingResolution(None)
+
+    warning = None
+    if info.newest_version is not None and info.newest_version != latest_version:
+        published_platforms = ", ".join(info.newest_platforms) or "none"
+        warning = (
+            f"{publisher}.{name}: newest published version {info.newest_version} has no VSIX "
+            f"for a supported system (published platforms: {published_platforms}); "
+            f"using {latest_version}."
+        )
 
     if latest_version == current_version and not force:
-        return None
+        return PendingResolution(None, warning)
 
-    if not generic_available and not target_platforms:
+    if not info.generic_available and not info.target_platforms:
         raise UpdateError(
             f"No VSIX for a supported system was published for {publisher}.{name}@{latest_version}."
         )
 
-    download_publisher = publisher_api if isinstance(publisher_api, str) and publisher_api else publisher
-    download_name = name_api if isinstance(name_api, str) and name_api else name
+    download_publisher = info.publisher if isinstance(info.publisher, str) and info.publisher else publisher
+    download_name = info.name if isinstance(info.name, str) and info.name else name
 
-    return PendingUpdate(
-        index=index,
-        group=group,
-        publisher=publisher,
-        name=name,
-        download_publisher=download_publisher,
-        download_name=download_name,
-        current_version=current_version,
-        latest_version=latest_version,
-        generic_available=generic_available,
-        target_platforms=target_platforms,
+    return PendingResolution(
+        PendingUpdate(
+            index=index,
+            group=group,
+            publisher=publisher,
+            name=name,
+            download_publisher=download_publisher,
+            download_name=download_name,
+            current_version=current_version,
+            latest_version=latest_version,
+            generic_available=info.generic_available,
+            target_platforms=info.target_platforms,
+        ),
+        warning,
     )
 
 
@@ -413,7 +521,7 @@ def resolve_and_hash(
     check: bool,
     on_progress: Callable[[], None] | None = None,
     on_progress_start: Callable[[int], None] | None = None,
-) -> list[PendingUpdate]:
+) -> ResolveResult:
     """Resolve versions and hash assets in one shared, fully pipelined pool.
 
     An extension's download/hash tasks (one per declared platform asset) are submitted
@@ -422,6 +530,7 @@ def resolve_and_hash(
     With --check no download task is ever submitted and progress fires once per
     checked entry. During an update, progress starts once the number of extensions
     requiring hashes is known, then fires when each extension's last asset finishes.
+    A failed extension is recorded and skipped so other entries can still be updated.
     """
 
     def bump() -> None:
@@ -429,18 +538,55 @@ def resolve_and_hash(
             on_progress()
 
     pending_updates: list[PendingUpdate] = []
+    warnings: list[tuple[int, str]] = []
+    failures: list[UpdateFailure] = []
     results: dict[int, dict[str, str | None]] = {}
     remaining_assets: dict[int, int] = {}
+    failed_pending_ids: set[int] = set()
+
+    def append_failure(
+        index: int,
+        group: str | None,
+        entry: dict[str, Any],
+        error: Exception,
+    ) -> None:
+        publisher = entry.get("publisher")
+        name = entry.get("name")
+        failures.append(
+            UpdateFailure(
+                index=index,
+                group=group,
+                publisher=publisher if isinstance(publisher, str) and publisher else "<unknown>",
+                name=name if isinstance(name, str) and name else "<unknown>",
+                message=str(error) or error.__class__.__name__,
+            )
+        )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
-        resolve_futures = [
-            executor.submit(resolve_pending, index, group, entry, include_prerelease, force)
+        resolve_futures = {
+            executor.submit(resolve_pending, index, group, entry, include_prerelease, force): (
+                index,
+                group,
+                entry,
+            )
             for index, group, entry in entries
-        ]
+        }
         hash_futures: dict[concurrent.futures.Future, tuple[PendingUpdate, str]] = {}
 
         for future in concurrent.futures.as_completed(resolve_futures):
-            pending = future.result()
+            index, group, entry = resolve_futures[future]
+            try:
+                resolution = future.result()
+            except Exception as err:
+                append_failure(index, group, entry, err)
+                if check:
+                    bump()
+                continue
+
+            if resolution.warning is not None:
+                warnings.append((index, resolution.warning))
+
+            pending = resolution.pending
             if pending is None:
                 if check:
                     bump()
@@ -466,17 +612,54 @@ def resolve_and_hash(
 
         for future in concurrent.futures.as_completed(hash_futures):
             pending, key = hash_futures[future]
-            results[id(pending)][key] = future.result()
-            remaining_assets[id(pending)] -= 1
-            if remaining_assets[id(pending)] == 0:
+            pending_id = id(pending)
+            try:
+                results[pending_id][key] = future.result()
+            except Exception as err:
+                if pending_id not in failed_pending_ids:
+                    failed_pending_ids.add(pending_id)
+                    failures.append(
+                        UpdateFailure(
+                            index=pending.index,
+                            group=pending.group,
+                            publisher=pending.publisher,
+                            name=pending.name,
+                            message=str(err) or err.__class__.__name__,
+                        )
+                    )
+            remaining_assets[pending_id] -= 1
+            if remaining_assets[pending_id] == 0:
                 bump()
 
     if not check:
+        successful_updates: list[PendingUpdate] = []
         for pending in pending_updates:
-            pending.latest_hash = assemble_hash(pending, results[id(pending)])
+            if id(pending) in failed_pending_ids:
+                continue
+            try:
+                pending.latest_hash = assemble_hash(pending, results[id(pending)])
+            except Exception as err:
+                failures.append(
+                    UpdateFailure(
+                        index=pending.index,
+                        group=pending.group,
+                        publisher=pending.publisher,
+                        name=pending.name,
+                        message=str(err) or err.__class__.__name__,
+                    )
+                )
+                continue
+            successful_updates.append(pending)
+        pending_updates = successful_updates
 
     pending_updates.sort(key=lambda pending: pending.index)
-    return pending_updates
+    failures.sort(key=lambda failure: failure.index)
+    warnings.sort(key=lambda warning: warning[0])
+    return ResolveResult(
+        pending_updates=pending_updates,
+        warnings=[warning for _, warning in warnings],
+        failures=failures,
+    )
 
 
 def write_json_atomic(path: Path, data: Any) -> None:
@@ -494,6 +677,12 @@ def format_version_line(pending: PendingUpdate) -> str:
     arrow = click.style("→", fg="bright_black")
     new = click.style(pending.latest_version, fg="green", bold=True)
     return f"{prefix}{name}  {old} {arrow} {new}"
+
+
+def format_failure(failure: UpdateFailure) -> str:
+    prefix = click.style(f"[{failure.group}] ", fg="cyan") if failure.group is not None else ""
+    name = click.style(f"{failure.publisher}.{failure.name}", bold=True)
+    return f"{prefix}{name}: {failure.message}"
 
 
 def format_update(pending: PendingUpdate) -> str:
@@ -539,7 +728,7 @@ def apply_updates(data: Any, pending_updates: list[PendingUpdate], selected_grou
 
     for group, group_entries in groups:
         for entry in group_entries:
-            pending = update_map.get((group, entry["publisher"], entry["name"]))
+            pending = update_map.get((group, entry.get("publisher"), entry.get("name")))
             if pending is not None:
                 entry["version"] = pending.latest_version
                 entry["sha256"] = pending.latest_hash
@@ -639,7 +828,7 @@ def main(
                 if bar is not None:
                     bar.update(1)
 
-            pending_updates = resolve_and_hash(
+            result = resolve_and_hash(
                 entries,
                 include_prerelease,
                 force,
@@ -649,7 +838,21 @@ def main(
                 on_progress_start=None if check else start_hash_progress,
             )
 
+        for warning in result.warnings:
+            click.secho(f"warning: {warning}", err=True, fg="yellow")
+        for failure in result.failures:
+            click.secho(f"warning: {format_failure(failure)}", err=True, fg="yellow")
+
+        pending_updates = result.pending_updates
         if not pending_updates:
+            if result.failures:
+                click.secho(
+                    f"\n{len(result.failures)} extension(s) could not be updated.",
+                    err=True,
+                    fg="yellow",
+                    bold=True,
+                )
+                ctx.exit(1)
             click.secho("✓ All Marketplace extensions are already up to date.", fg="green", bold=True)
             return
 
@@ -658,7 +861,16 @@ def main(
         if check:
             for pending in pending_updates:
                 click.echo(format_version_line(pending))
-            click.secho(f"\n{len(pending_updates)} update(s) available.", fg="yellow", bold=True)
+            suffix = (
+                f"; {len(result.failures)} extension(s) could not be checked"
+                if result.failures
+                else ""
+            )
+            click.secho(
+                f"\n{len(pending_updates)} update(s) available{suffix}.",
+                fg="yellow",
+                bold=True,
+            )
             ctx.exit(1)
 
         for pending in pending_updates:
@@ -670,6 +882,14 @@ def main(
         click.secho(
             f"\n✓ Updated {len(pending_updates)} extension(s) in {path}.", fg="green", bold=True
         )
+        if result.failures:
+            click.secho(
+                f"warning: {len(result.failures)} extension(s) were left unchanged.",
+                err=True,
+                fg="yellow",
+                bold=True,
+            )
+            ctx.exit(1)
     except UpdateError as err:
         click.secho(f"error: {err}", err=True, fg="red")
         ctx.exit(1)

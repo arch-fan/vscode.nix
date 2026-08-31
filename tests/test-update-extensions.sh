@@ -55,6 +55,24 @@ cat > "$tmpdir/grouped.json" <<'EOF'
         "default": "sha256-eta-seven-3.0.0-generic",
         "x86_64-linux": "sha256-eta-seven-3.0.0-linux-x64"
       }
+    },
+    {
+      "publisher": "theta",
+      "name": "eight",
+      "version": "0.0.0",
+      "sha256": "sha256-theta-eight-0.0.0"
+    },
+    {
+      "publisher": "iota",
+      "name": "nine",
+      "version": "0.0.0",
+      "sha256": "sha256-iota-nine-0.0.0"
+    },
+    {
+      "publisher": "kappa",
+      "name": "ten",
+      "version": "0.0.0",
+      "sha256": "sha256-kappa-ten-0.0.0"
     }
   ],
   "native": [
@@ -99,6 +117,7 @@ epsilon_five="$(sri 'epsilon/extension/five/2.0.0|linux-x64')"
 eta_seven_default="$(sri 'eta/extension/seven/4.0.0|default')"
 eta_seven_x64="$(sri 'eta/extension/seven/4.0.0|linux-x64')"
 eta_seven_arm64="$(sri 'eta/extension/seven/4.0.0|linux-arm64')"
+theta_eight_x64="$(sri 'theta/extension/eight/1.0.0|linux-x64')"
 zeta_six_x64="$(sri 'zeta/extension/six/3.0.0|linux-x64')"
 zeta_six_arm64="$(sri 'zeta/extension/six/3.0.0|linux-arm64')"
 
@@ -175,12 +194,28 @@ jq -e \
   .[1].prerelease == true
 ' "$tmpdir/flat.json" >/dev/null
 
-python3 "$script" --group node "$tmpdir/grouped.json"
+if python3 "$script" --group node "$tmpdir/grouped.json" \
+  >"$tmpdir/node.stdout" 2>"$tmpdir/node.stderr"; then
+  echo "an unavailable extension should make the updater exit with code 1" >&2
+  exit 1
+else
+  status="$?"
+  if [[ "$status" -ne 1 ]]; then
+    echo "partial update exited with $status, expected 1" >&2
+    exit 1
+  fi
+fi
+grep -F "warning: theta.eight: newest published version 2.0.0 has no VSIX" \
+  "$tmpdir/node.stderr" >/dev/null
+grep -F "published platforms: alpine-x64" "$tmpdir/node.stderr" >/dev/null
+grep -F "warning: [node] iota.nine: No VSIX" "$tmpdir/node.stderr" >/dev/null
+grep -F "warning: [node] kappa.ten: No downloadable VSIX" "$tmpdir/node.stderr" >/dev/null
 jq -e \
   --arg epsilon_five "$epsilon_five" \
   --arg eta_seven_default "$eta_seven_default" \
   --arg eta_seven_x64 "$eta_seven_x64" \
   --arg eta_seven_arm64 "$eta_seven_arm64" \
+  --arg theta_eight_x64 "$theta_eight_x64" \
   '
   .base[0].version == "1.0.0" and
   .base[0].sha256 == "sha256-gamma-three-1.0.0" and
@@ -193,16 +228,35 @@ jq -e \
   .node[1].sha256.default == $eta_seven_default and
   .node[1].sha256."x86_64-linux" == $eta_seven_x64 and
   .node[1].sha256."aarch64-linux" == $eta_seven_arm64 and
-  (.node[1] | has("arch") | not)
+  (.node[1] | has("arch") | not) and
+  .node[2].version == "1.0.0" and
+  .node[2].sha256."x86_64-linux" == $theta_eight_x64 and
+  .node[3].version == "0.0.0" and
+  .node[3].sha256 == "sha256-iota-nine-0.0.0" and
+  .node[4].version == "0.0.0" and
+  .node[4].sha256 == "sha256-kappa-ten-0.0.0"
 ' "$tmpdir/grouped.json" >/dev/null
 
-python3 "$script" --include-prerelease "$tmpdir/grouped.json"
+if python3 "$script" --include-prerelease "$tmpdir/grouped.json" \
+  >"$tmpdir/all.stdout" 2>"$tmpdir/all.stderr"; then
+  echo "an unavailable extension should make the updater exit with code 1" >&2
+  exit 1
+else
+  status="$?"
+  if [[ "$status" -ne 1 ]]; then
+    echo "partial update exited with $status, expected 1" >&2
+    exit 1
+  fi
+fi
+grep -F "warning: theta.eight: newest published version 2.0.0 has no VSIX" \
+  "$tmpdir/all.stderr" >/dev/null
 jq -e \
   --arg delta_four "$delta_four" \
   --arg epsilon_five "$epsilon_five" \
   --arg eta_seven_default "$eta_seven_default" \
   --arg eta_seven_x64 "$eta_seven_x64" \
   --arg eta_seven_arm64 "$eta_seven_arm64" \
+  --arg theta_eight_x64 "$theta_eight_x64" \
   --arg zeta_six_x64 "$zeta_six_x64" \
   --arg zeta_six_arm64 "$zeta_six_arm64" \
   '
@@ -219,6 +273,12 @@ jq -e \
   .node[1].sha256."x86_64-linux" == $eta_seven_x64 and
   .node[1].sha256."aarch64-linux" == $eta_seven_arm64 and
   (.node[1] | has("arch") | not) and
+  .node[2].version == "1.0.0" and
+  .node[2].sha256."x86_64-linux" == $theta_eight_x64 and
+  .node[3].version == "0.0.0" and
+  .node[3].sha256 == "sha256-iota-nine-0.0.0" and
+  .node[4].version == "0.0.0" and
+  .node[4].sha256 == "sha256-kappa-ten-0.0.0" and
   .native[0].version == "3.0.0" and
   .native[0].sha256."x86_64-linux" == $zeta_six_x64 and
   .native[0].sha256."aarch64-linux" == $zeta_six_arm64 and

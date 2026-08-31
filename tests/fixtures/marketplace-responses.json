@@ -83,6 +83,40 @@
       }
     ]
   },
+  "theta.eight": {
+    "publisher": "theta",
+    "name": "eight",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "targetPlatform": "alpine-x64"
+      },
+      {
+        "version": "1.0.0",
+        "targetPlatform": "linux-x64"
+      }
+    ]
+  },
+  "iota.nine": {
+    "publisher": "iota",
+    "name": "nine",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "targetPlatform": "win32-x64"
+      }
+    ]
+  },
+  "kappa.ten": {
+    "publisher": "kappa",
+    "name": "ten",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "targetPlatform": "linux-x64"
+      }
+    ]
+  },
   "zeta.six": {
     "publisher": "zeta",
     "name": "six",
