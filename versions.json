@@ -1,26 +1,26 @@
 {
   "stable": {
-    "version": "1.145.0",
-    "rev": "a717861c07586a53d83b80d742cd3f59b20a6273",
-    "serverHash": "sha256-U6jicH8ns9/Aj4rvU2+VlfTEeZIvwT+WROcjs7Grqzc=",
+    "version": "1.146.0",
+    "rev": "69047191fc427f2f92828279aae1d90d8eeda7ab",
+    "serverHash": "sha256-bCfY80JvKcMhYJ9rSZoySSTKLxcLi7Cy34IV8R6E/ZE=",
     "hashes": {
-      "x86_64-linux": "sha256-1EUQODlhsIn3t86EjrzTinQPhZG7i2D4FTohDkXYhIw=",
-      "aarch64-linux": "sha256-eSVyffb2HddT/fBcHrncox+rgZnZ+jduVFt4JXa63AM=",
-      "armv7l-linux": "sha256-QY40mAKuL6ghcx1XDXvq7NID31FJ7q1N/kXdB2QYhS0=",
-      "x86_64-darwin": "sha256-xWiGfRiD1VO9dibyyiIt2RplC7+zkZLeb/LhtgD2jp4=",
-      "aarch64-darwin": "sha256-JtCTzkWTS1Hu9Yo/VeRD5dWxk+mdfeuyKMpR3SuxKes="
+      "x86_64-linux": "sha256-y9t73j01jHKXzx2datwW37HQF5UB+ywVLfSFk+OeNgA=",
+      "aarch64-linux": "sha256-meUDMH/JVpoJ5G3TmgtByNE696BwHu48bsglV2O/I/w=",
+      "armv7l-linux": "sha256-pwDETmrWmN9YHinwu+GRRlGibMARyEf7i0ayz9ybVVs=",
+      "x86_64-darwin": "sha256-dLHe7x4zzBRNkT1gwOmM72seKcHymT2QXDtYV2+hIgI=",
+      "aarch64-darwin": "sha256-bo0n7gxajyqjxD43NAfuzRHCcMP+f0YQDvaCqsFLtkg="
     }
   },
   "insiders": {
-    "version": "1.146.0-insider",
-    "rev": "e576c7bbeb39772a1d1ebe472545def0d93e6d8b",
-    "serverHash": "sha256-ZftBenZw2zoo8pkHLgbH2srXf8u1BHLLVCchCY1WPBs=",
+    "version": "1.147.0-insider",
+    "rev": "944d79c5b914eea991cc9a92c5e08053e565f983",
+    "serverHash": "sha256-PWzM87cIJjl0kWbZucINSAl1btPGsK+jrZ3Qao1lkzI=",
     "hashes": {
-      "x86_64-linux": "sha256-Km8QVB/2gW2BqBAzAHvwApmW8wtkmJu/RKAqwps2ObY=",
-      "aarch64-linux": "sha256-2eVsLguTITgGsew0GeVLoevK3S0F/4vu2uPmFzEHUZw=",
-      "armv7l-linux": "sha256-5QltISoxkKRw1h6Akdd5uyCE+UU4zi8+4JaghJFEw0Q=",
-      "x86_64-darwin": "sha256-aBWGyqOy1PIpUqIqn9ufjY2auSwuSetG9qX/vHBVgME=",
-      "aarch64-darwin": "sha256-72kMGN7FTYEbcC4BsKELUVtw1zD6T7gM6vR1uy8Y7Lo="
+      "x86_64-linux": "sha256-2oTzvzLxbV0x3s4ik9wf/VGYhkJ4KJnlbxJXK4atTJI=",
+      "aarch64-linux": "sha256-BooFfcvSsc67x5MvkvcmVm7c4wHEevNYA5IyL802f9o=",
+      "armv7l-linux": "sha256-xnqLDlFgJCwzoO9pnX6jU/qeWm1ok5E30yGIDmZIfYA=",
+      "x86_64-darwin": "sha256-MD6dPUT/viqrwnYAZa29dzIuTIGTllN5V5rXpPdJJOI=",
+      "aarch64-darwin": "sha256-I0RpxaV0q2br2xasxSmNuoHUxrKC3JTiXmX7KTyaLEc="
     }
   }
 }
